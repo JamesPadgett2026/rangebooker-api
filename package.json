@@ -1,0 +1,16 @@
+{
+  "name": "rangebooker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/functions/GetLocations.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@azure/functions": "^4.13.0"
+  }
+}
