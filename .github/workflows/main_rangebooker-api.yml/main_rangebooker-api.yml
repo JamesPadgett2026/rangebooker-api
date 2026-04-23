@@ -1,4 +1,4 @@
-  name: Deploy Azure Function
+name: Deploy Azure Function
 
 on:
   push:
@@ -13,6 +13,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install dependencies
         run: npm install
 
@@ -22,3 +27,4 @@ jobs:
           app-name: 'rangebooker-api'
           package: '.'
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          remote-build: true
