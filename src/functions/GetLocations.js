@@ -25,6 +25,20 @@ async function getAccessToken() {
     return data.access_token;
 }
 
+function cleanDriverName(value) {
+    if (!value) return null;
+
+    const name = String(value).trim();
+
+    if (!name) return null;
+    if (name.toLowerCase() === 'unknown') return null;
+    if (name === '__Please Select__') return null;
+    if (name.toLowerCase() === 'please') return null;
+    if (name.toLowerCase().startsWith('please')) return null;
+
+    return name;
+}
+
 app.http('GetLocations', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -62,11 +76,16 @@ app.http('GetLocations', {
                 throw new Error(`List lookup failed: ${JSON.stringify(listData)}`);
             }
 
-            const locations = (listData.value || []).map((item, index) => ({
-                id: index + 1,
-                name: item.fields?.DriverName || 'Unknown',
-                status: 'Active'
-            }));
+            const seen = new Set();
+
+            const locations = (listData.value || [])
+                .map(item => cleanDriverName(item.fields?.DriverName))
+                .filter(name => name && !seen.has(name.toLowerCase()) && seen.add(name.toLowerCase()))
+                .map((name, index) => ({
+                    id: index + 1,
+                    name,
+                    status: 'Active'
+                }));
 
             return {
                 jsonBody: {
