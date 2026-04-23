@@ -64,13 +64,12 @@ jobs:
           unzip release.zip
           rm release.zip
       
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_9E91EC18CD2E40079ED9F172F440C63F }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E81407C177E245A39CDA6E75A2BD676F }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_556850994C704BA6BE1FA05046283C4F }}
-
+     - name: Deploy to Azure Functions
+  uses: Azure/functions-action@v1
+  with:
+    app-name: 'rangebooker-api'
+    package: '.'
+    publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1
         id: fa
