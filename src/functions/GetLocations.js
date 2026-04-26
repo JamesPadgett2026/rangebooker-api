@@ -152,7 +152,7 @@ app.http("RegisterMember", {
 
                             // Removed EmailColSP because SharePoint says that internal column name does not exist.
                             // For now we store the email in loginemail.
-                            loginemail: email,
+                            email: email,
 
                             PasswordColSP: password,
                             AreaCodeColSP: phoneParts.areaCode,
