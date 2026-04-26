@@ -143,7 +143,7 @@ app.http("RegisterMember", {
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
 
-                EmailColSP: email,
+                email: email,
                 loginemail: email,
 
                 PasswordColSP: password,
