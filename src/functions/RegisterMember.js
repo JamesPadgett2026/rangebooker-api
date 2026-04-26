@@ -1,10 +1,20 @@
 const { app } = require("@azure/functions");
 
 app.http("RegisterMember", {
-  methods: ["POST"],
+  methods: ["GET", "POST"],
   authLevel: "anonymous",
   handler: async (request, context) => {
     context.log("RegisterMember called");
+
+    if (request.method === "GET") {
+      return {
+        status: 200,
+        jsonBody: {
+          success: true,
+          message: "RegisterMember API is reachable."
+        }
+      };
+    }
 
     let body;
 
