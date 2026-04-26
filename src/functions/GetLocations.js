@@ -29,9 +29,7 @@ async function getRangeBookerSite(token) {
     const siteRes = await fetch(
         "https://graph.microsoft.com/v1.0/sites/tropicaltech.sharepoint.com:/sites/RangeBooker",
         {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
+            headers: { Authorization: `Bearer ${token}` }
         }
     );
 
@@ -65,9 +63,7 @@ app.http("GetLocations", {
             const listRes = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${siteData.id}/lists/CalendarNewSPList/items?expand=fields`,
                 {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
+                    headers: { Authorization: `Bearer ${token}` }
                 }
             );
 
@@ -137,7 +133,6 @@ app.http("RegisterMember", {
             }
 
             const phoneParts = splitPhone(phone);
-
             const token = await getAccessToken();
             const siteData = await getRangeBookerSite(token);
 
@@ -154,8 +149,11 @@ app.http("RegisterMember", {
                             Title: `${firstName} ${lastName}`,
                             FirstNameColSP: firstName,
                             LastNameColSP: lastName,
-                            EmailColSP: email,
+
+                            // Removed EmailColSP because SharePoint says that internal column name does not exist.
+                            // For now we store the email in loginemail.
                             loginemail: email,
+
                             PasswordColSP: password,
                             AreaCodeColSP: phoneParts.areaCode,
                             Phone3ColSP: phoneParts.phone3,
