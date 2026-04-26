@@ -57,7 +57,6 @@ app.http("RegisterMember", {
     authLevel: "anonymous",
     handler: async (request, context) => {
         try {
-            // --- Test endpoint ---
             if (request.method === "GET") {
                 return {
                     status: 200,
@@ -68,15 +67,14 @@ app.http("RegisterMember", {
                 };
             }
 
-            // --- Get data ---
             const body = await request.json();
 
-            const firstName = (body.firstName || "").trim();
-            const lastName = (body.lastName || "").trim();
-            const email = (body.email || "").trim().toLowerCase();
-            const phone = (body.phone || "").trim();
-            const password = body.password || "";
-            const notes = (body.notes || "").trim();
+            const firstName = String(body.firstName || "").trim();
+            const lastName = String(body.lastName || "").trim();
+            const email = String(body.email || "").trim().toLowerCase();
+            const phone = String(body.phone || "").trim();
+            const password = String(body.password || "");
+            const notes = String(body.notes || "").trim();
 
             if (!firstName || !lastName || !email || !password) {
                 return {
@@ -92,10 +90,10 @@ app.http("RegisterMember", {
             const site = await getSite(token);
 
             // --- CHECK FOR DUPLICATE EMAIL ---
-            const safeEmail = email.replace(/'/g, "''");
-
+            // We read the current members and compare in JavaScript.
+            // This is more reliable than Graph filtering on SharePoint custom fields.
             const duplicateRes = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items?expand=fields&$filter=fields/EmailColSP eq '${safeEmail}'`,
+                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items?expand=fields&$top=5000`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`
@@ -109,7 +107,19 @@ app.http("RegisterMember", {
                 throw new Error(`Duplicate check failed: ${JSON.stringify(duplicateData)}`);
             }
 
-            if ((duplicateData.value || []).length > 0) {
+            const emailAlreadyExists = (duplicateData.value || []).some(item => {
+                const existingEmailColSP = String(item.fields?.EmailColSP || "").trim().toLowerCase();
+                const existingLoginEmail = String(item.fields?.loginemail || "").trim().toLowerCase();
+                const existingEmailLowercase = String(item.fields?.email || "").trim().toLowerCase();
+
+                return (
+                    existingEmailColSP === email ||
+                    existingLoginEmail === email ||
+                    existingEmailLowercase === email
+                );
+            });
+
+            if (emailAlreadyExists) {
                 return {
                     status: 409,
                     jsonBody: {
@@ -119,7 +129,6 @@ app.http("RegisterMember", {
                 };
             }
 
-            // --- PREP DATA ---
             const phoneParts = splitPhone(phone);
 
             const fields = {
@@ -144,7 +153,6 @@ app.http("RegisterMember", {
                 Notes: notes || ""
             };
 
-            // --- CREATE MEMBER ---
             const createRes = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items`,
                 {
