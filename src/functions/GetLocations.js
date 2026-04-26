@@ -145,24 +145,27 @@ app.http("RegisterMember", {
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        fields: {
-                            Title: `${firstName} ${lastName}`,
-                            FirstNameColSP: firstName,
-                            LastNameColSP: lastName,
+                       fields: {
+    Title: `${firstName} ${lastName}`,
 
-                            // Removed EmailColSP because SharePoint says that internal column name does not exist.
-                            // For now we store the email in loginemail.
-                            email: email,
+    FirstNameColSP: firstName,
+    LastNameColSP: lastName,
 
-                            PasswordColSP: password,
-                            AreaCodeColSP: phoneParts.areaCode,
-                            Phone3ColSP: phoneParts.phone3,
-                            Phone4ColSP: phoneParts.phone4,
-                            Notes: notes,
-                            MemberType: "1",
-                            DateJoined: new Date().toISOString(),
-                            Active: true
-                        }
+    EmailColSP: email,
+    loginemail: email,
+
+    PasswordColSP: password,
+
+    AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : null,
+    Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : null,
+    Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : null,
+
+    MemberType: 1,               // NUMBER (not string)
+    Active: "Yes",               // TEXT (not true/false)
+    DateJoined: new Date().toISOString(),
+
+    Notes: notes
+}
                     })
                 }
             );
