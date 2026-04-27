@@ -1,4 +1,14 @@
+// RangeBooker API
+// Version: 2026-04-27 09:15 AM Eastern
+// File: src/functions/GetLocations.js
+// Notes:
+// - Keeps GetLocations working
+// - RegisterMember writes to MemberListSP
+// - Friendly duplicate email message for SharePoint unique constraint
+
 const { app } = require("@azure/functions");
+
+const API_VERSION = "2026-04-27 09:15 AM Eastern";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -52,10 +62,22 @@ function splitPhone(phone) {
     };
 }
 
+function isDuplicateEmailError(createData) {
+    const message = String(createData?.error?.message || "").toLowerCase();
+
+    return (
+        message.includes("unique constraints") ||
+        message.includes("duplicate") ||
+        message.includes("already has the provided value")
+    );
+}
+
 app.http("GetLocations", {
     methods: ["GET"],
     authLevel: "anonymous",
     handler: async (request, context) => {
+        context.log(`GetLocations called. Version: ${API_VERSION}`);
+
         try {
             const token = await getAccessToken();
             const siteData = await getRangeBookerSite(token);
@@ -77,6 +99,7 @@ app.http("GetLocations", {
                 status: 200,
                 jsonBody: {
                     success: true,
+                    version: API_VERSION,
                     locations: (listData.value || []).map((item, index) => ({
                         id: index + 1,
                         name: item.fields?.Title || `Item ${index + 1}`,
@@ -90,6 +113,7 @@ app.http("GetLocations", {
                 status: 500,
                 jsonBody: {
                     success: false,
+                    version: API_VERSION,
                     error: err.message
                 }
             };
@@ -101,13 +125,14 @@ app.http("RegisterMember", {
     methods: ["GET", "POST"],
     authLevel: "anonymous",
     handler: async (request, context) => {
-        context.log("RegisterMember called");
+        context.log(`RegisterMember called. Version: ${API_VERSION}`);
 
         if (request.method === "GET") {
             return {
                 status: 200,
                 jsonBody: {
                     success: true,
+                    version: API_VERSION,
                     message: "RegisterMember API is reachable."
                 }
             };
@@ -118,7 +143,7 @@ app.http("RegisterMember", {
 
             const firstName = String(body.firstName || "").trim();
             const lastName = String(body.lastName || "").trim();
-            const email = String(body.email || "").trim();
+            const email = String(body.email || "").trim().toLowerCase();
             const phone = String(body.phone || "").trim();
             const password = String(body.password || "");
             const notes = String(body.notes || "").trim();
@@ -128,6 +153,7 @@ app.http("RegisterMember", {
                     status: 400,
                     jsonBody: {
                         success: false,
+                        version: API_VERSION,
                         error: "First name, last name, email, and password are required."
                     }
                 };
@@ -176,6 +202,17 @@ app.http("RegisterMember", {
             const createData = await createRes.json();
 
             if (!createRes.ok) {
+                if (isDuplicateEmailError(createData)) {
+                    return {
+                        status: 409,
+                        jsonBody: {
+                            success: false,
+                            version: API_VERSION,
+                            error: "An account with this email already exists."
+                        }
+                    };
+                }
+
                 throw new Error(`Member create failed: ${JSON.stringify(createData)}`);
             }
 
@@ -183,6 +220,7 @@ app.http("RegisterMember", {
                 status: 200,
                 jsonBody: {
                     success: true,
+                    version: API_VERSION,
                     message: "Member created in SharePoint.",
                     itemId: createData.id
                 }
@@ -192,6 +230,7 @@ app.http("RegisterMember", {
                 status: 500,
                 jsonBody: {
                     success: false,
+                    version: API_VERSION,
                     error: err.message
                 }
             };
