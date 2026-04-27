@@ -52,6 +52,16 @@ function splitPhone(phone) {
     };
 }
 
+function isDuplicateEmailError(createData) {
+    const message = String(createData?.error?.message || "").toLowerCase();
+
+    return (
+        message.includes("unique constraints") ||
+        message.includes("duplicate") ||
+        message.includes("already has the provided value")
+    );
+}
+
 app.http("RegisterMember", {
     methods: ["GET", "POST"],
     authLevel: "anonymous",
@@ -89,9 +99,6 @@ app.http("RegisterMember", {
             const token = await getAccessToken();
             const site = await getSite(token);
 
-            // --- CHECK FOR DUPLICATE EMAIL ---
-            // We read the current members and compare in JavaScript.
-            // This is more reliable than Graph filtering on SharePoint custom fields.
             const duplicateRes = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items?expand=fields&$top=5000`,
                 {
@@ -133,23 +140,17 @@ app.http("RegisterMember", {
 
             const fields = {
                 Title: `${firstName} ${lastName}`,
-
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
-
                 EmailColSP: email,
                 loginemail: email,
-
                 PasswordColSP: password,
-
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
                 Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
                 Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : 0,
-
                 MemberType: 1,
                 Active: "Yes",
                 DateJoined: new Date().toISOString(),
-
                 Notes: notes || ""
             };
 
@@ -168,6 +169,16 @@ app.http("RegisterMember", {
             const createData = await createRes.json();
 
             if (!createRes.ok) {
+                if (isDuplicateEmailError(createData)) {
+                    return {
+                        status: 409,
+                        jsonBody: {
+                            success: false,
+                            error: "An account with this email already exists."
+                        }
+                    };
+                }
+
                 throw new Error(`Create failed: ${JSON.stringify(createData)}`);
             }
 
