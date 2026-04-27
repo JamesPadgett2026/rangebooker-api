@@ -1,14 +1,15 @@
 // RangeBooker API
-// Version: 2026-04-27 09:15 AM Eastern
+// Version: 2026-04-27 05:25 PM Eastern
 // File: src/functions/GetLocations.js
 // Notes:
 // - Keeps GetLocations working
 // - RegisterMember writes to MemberListSP
+// - LoginMember checks MemberListSP for email/password
 // - Friendly duplicate email message for SharePoint unique constraint
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-27 09:15 AM Eastern";
+const API_VERSION = "2026-04-27 05:25 PM Eastern";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -70,6 +71,23 @@ function isDuplicateEmailError(createData) {
         message.includes("duplicate") ||
         message.includes("already has the provided value")
     );
+}
+
+async function getMemberItems(token, siteId) {
+    const listRes = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/MemberListSP/items?expand=fields&$top=5000`,
+        {
+            headers: { Authorization: `Bearer ${token}` }
+        }
+    );
+
+    const listData = await listRes.json();
+
+    if (!listRes.ok) {
+        throw new Error(`Member lookup failed: ${JSON.stringify(listData)}`);
+    }
+
+    return listData.value || [];
 }
 
 app.http("GetLocations", {
@@ -223,6 +241,119 @@ app.http("RegisterMember", {
                     version: API_VERSION,
                     message: "Member created in SharePoint.",
                     itemId: createData.id
+                }
+            };
+        } catch (err) {
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+app.http("LoginMember", {
+    methods: ["GET", "POST"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`LoginMember called. Version: ${API_VERSION}`);
+
+        if (request.method === "GET") {
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "LoginMember API is reachable."
+                }
+            };
+        }
+
+        try {
+            const body = await request.json();
+
+            const email = String(body.email || "").trim().toLowerCase();
+            const password = String(body.password || "");
+
+            if (!email || !password) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Email and password are required."
+                    }
+                };
+            }
+
+            const token = await getAccessToken();
+            const siteData = await getRangeBookerSite(token);
+            const members = await getMemberItems(token, siteData.id);
+
+            const matchingMember = members.find(item => {
+                const fields = item.fields || {};
+
+                const email1 = String(fields.email || "").trim().toLowerCase();
+                const email2 = String(fields.loginemail || "").trim().toLowerCase();
+                const email3 = String(fields.EmailColSP || "").trim().toLowerCase();
+
+                return email1 === email || email2 === email || email3 === email;
+            });
+
+            if (!matchingMember) {
+                return {
+                    status: 401,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Invalid email or password."
+                    }
+                };
+            }
+
+            const fields = matchingMember.fields || {};
+            const savedPassword = String(fields.PasswordColSP || "");
+            const activeValue = String(fields.Active || "").trim().toLowerCase();
+
+            if (savedPassword !== password) {
+                return {
+                    status: 401,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Invalid email or password."
+                    }
+                };
+            }
+
+            if (activeValue && activeValue !== "yes" && activeValue !== "true" && activeValue !== "active") {
+                return {
+                    status: 403,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "This account is not active yet."
+                    }
+                };
+            }
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "Login successful.",
+                    member: {
+                        id: matchingMember.id,
+                        firstName: fields.FirstNameColSP || "",
+                        lastName: fields.LastNameColSP || "",
+                        email: email,
+                        title: fields.Title || ""
+                    }
                 }
             };
         } catch (err) {
