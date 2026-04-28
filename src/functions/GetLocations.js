@@ -1,15 +1,16 @@
 // RangeBooker API
-// Version: 2026-04-27 05:25 PM Eastern
+// Version: 2026-04-27 07:20 PM Eastern
 // File: src/functions/GetLocations.js
 // Notes:
 // - Keeps GetLocations working
 // - RegisterMember writes to MemberListSP
 // - LoginMember checks MemberListSP for email/password
-// - Friendly duplicate email message for SharePoint unique constraint
+// - RequestBooking writes to PendingRequestsListSP
+// - GetLocations now returns real SharePoint item.id for calendar dates
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-27 05:25 PM Eastern";
+const API_VERSION = "2026-04-27 07:20 PM Eastern";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -119,7 +120,7 @@ app.http("GetLocations", {
                     success: true,
                     version: API_VERSION,
                     locations: (listData.value || []).map((item, index) => ({
-                        id: index + 1,
+                        id: item.id,
                         name: item.fields?.Title || `Item ${index + 1}`,
                         status: "Active",
                         fields: item.fields
@@ -183,23 +184,17 @@ app.http("RegisterMember", {
 
             const fieldsToCreate = {
                 Title: `${firstName} ${lastName}`,
-
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
-
                 email: email,
                 loginemail: email,
-
                 PasswordColSP: password,
-
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
                 Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
                 Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : 0,
-
                 MemberType: 1,
                 Active: "Yes",
                 DateJoined: new Date().toISOString(),
-
                 Notes: notes || ""
             };
 
@@ -211,9 +206,7 @@ app.http("RegisterMember", {
                         Authorization: `Bearer ${token}`,
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({
-                        fields: fieldsToCreate
-                    })
+                    body: JSON.stringify({ fields: fieldsToCreate })
                 }
             );
 
@@ -352,8 +345,100 @@ app.http("LoginMember", {
                         firstName: fields.FirstNameColSP || "",
                         lastName: fields.LastNameColSP || "",
                         email: email,
-                        title: fields.Title || ""
+                        title: fields.Title || "",
+                        memberType: fields.MemberType || 1
                     }
+                }
+            };
+        } catch (err) {
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+app.http("RequestBooking", {
+    methods: ["GET", "POST"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`RequestBooking called. Version: ${API_VERSION}`);
+
+        if (request.method === "GET") {
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "RequestBooking API is reachable."
+                }
+            };
+        }
+
+        try {
+            const body = await request.json();
+
+            const memberId = Number(body.memberId || 0);
+            const userLevel = Number(body.userLevel || 1);
+            const memberName = String(body.memberName || "").trim();
+            const dateActual = String(body.dateActual || "").trim();
+            const dateId = Number(body.dateId || 0);
+
+            if (!memberId || !memberName || !dateActual || !dateId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Missing member or date information."
+                    }
+                };
+            }
+
+            const token = await getAccessToken();
+            const siteData = await getRangeBookerSite(token);
+
+            const fieldsToCreate = {
+                Title: new Date().toISOString(),
+                MemberIDLOckInColSP: memberId,
+                DateRequestWasAdded: new Date().toISOString(),
+                ApprovalStatus: "Requesting",
+                UserLevelColSP: userLevel,
+                MemberNameCombinedColSP: memberName,
+                DateActualColSP: dateActual,
+                DateIDLOckInColSP: dateId
+            };
+
+            const createRes = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${siteData.id}/lists/PendingRequestsListSP/items`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ fields: fieldsToCreate })
+                }
+            );
+
+            const createData = await createRes.json();
+
+            if (!createRes.ok) {
+                throw new Error(`Booking request failed: ${JSON.stringify(createData)}`);
+            }
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "Booking request submitted.",
+                    itemId: createData.id
                 }
             };
         } catch (err) {
