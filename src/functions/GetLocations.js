@@ -407,7 +407,7 @@ app.http("RequestBooking", {
                 Title: new Date().toISOString(),
                 MemberIDLOckInColSP: memberId,
                 DateRequestWasAdded: new Date().toISOString(),
-                ApprovalStatus: "Requesting",
+                Approved: "Requesting",
                 UserLevelColSP: userLevel,
                 MemberNameCombinedColSP: memberName,
                 DateActualColSP: dateActual,
