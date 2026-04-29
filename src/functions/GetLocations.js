@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-04-29 Membership Approval Login Update
+// Version: 2026-04-29 RequestBooking Debug Update
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-29 Membership Approval Login Update";
+const API_VERSION = "2026-04-29 RequestBooking Debug Update";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -28,7 +28,7 @@ async function getAccessToken() {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error("Token request failed.");
+        throw new Error("Token request failed: " + JSON.stringify(data));
     }
 
     return data.access_token;
@@ -45,7 +45,7 @@ async function getRangeBookerSite(token) {
     const siteData = await siteRes.json();
 
     if (!siteRes.ok) {
-        throw new Error("SharePoint site lookup failed.");
+        throw new Error("SharePoint site lookup failed: " + JSON.stringify(siteData));
     }
 
     return siteData;
@@ -90,7 +90,7 @@ async function getMemberItems(token, siteId) {
     const listData = await listRes.json();
 
     if (!listRes.ok) {
-        throw new Error("Member lookup failed.");
+        throw new Error("Member lookup failed: " + JSON.stringify(listData));
     }
 
     return listData.value || [];
@@ -107,7 +107,7 @@ async function getPendingRequestItems(token, siteId) {
     const listData = await listRes.json();
 
     if (!listRes.ok) {
-        throw new Error("Pending request lookup failed.");
+        throw new Error("Pending request lookup failed: " + JSON.stringify(listData));
     }
 
     return listData.value || [];
@@ -133,7 +133,7 @@ app.http("GetLocations", {
             const listData = await listRes.json();
 
             if (!listRes.ok) {
-                throw new Error("Calendar lookup failed.");
+                throw new Error("Calendar lookup failed: " + JSON.stringify(listData));
             }
 
             const locations = (listData.value || []).map((item, index) => {
@@ -346,7 +346,7 @@ app.http("RegisterMember", {
                     };
                 }
 
-                throw new Error("Member create failed.");
+                throw new Error("Member create failed: " + JSON.stringify(createData));
             }
 
             return {
@@ -530,13 +530,19 @@ app.http("RequestBooking", {
             const dateActual = String(body.dateActual || "").trim();
             const dateId = Number(body.dateId || 0);
 
-            if (!memberId || !memberName || !dateActual || !dateId) {
+            if (!memberId || !memberName || !memberEmail || !dateActual || !dateId) {
                 return {
                     status: 400,
                     jsonBody: {
                         success: false,
                         version: API_VERSION,
-                        error: "Missing member or date information."
+                        error:
+                            "Missing member or date information. " +
+                            `memberId=${memberId}, ` +
+                            `memberName=${memberName || "blank"}, ` +
+                            `memberEmail=${memberEmail || "blank"}, ` +
+                            `dateActual=${dateActual || "blank"}, ` +
+                            `dateId=${dateId || "blank"}`
                     }
                 };
             }
@@ -546,15 +552,17 @@ app.http("RequestBooking", {
 
             const fieldsToCreate = {
                 Title: new Date().toISOString(),
+                DateIDLOckInColSP: dateId,
+                DateActualColSP: dateActual,
                 MemberIDLOckInColSP: memberId,
+                MemberNameCombinedColSP: memberName,
                 DateRequestWasAdded: new Date().toISOString(),
                 Approved: "Requesting",
                 UserLevelColSP: userLevel,
-                MemberNameCombinedColSP: memberName,
-                MemberEmailColSP: memberEmail,
-                DateActualColSP: dateActual,
-                DateIDLOckInColSP: dateId
+                MemberEmailColSP: memberEmail
             };
+
+            context.log("RequestBooking fieldsToCreate:", JSON.stringify(fieldsToCreate));
 
             const createRes = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${siteData.id}/lists/PendingRequestsListSP/items`,
@@ -571,7 +579,10 @@ app.http("RequestBooking", {
             const createData = await createRes.json();
 
             if (!createRes.ok) {
-                throw new Error("Booking request failed.");
+                throw new Error(
+                    "Booking request failed: " +
+                    JSON.stringify(createData)
+                );
             }
 
             return {
