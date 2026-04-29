@@ -559,7 +559,6 @@ app.http("RequestBooking", {
                 DateRequestWasAdded: new Date().toISOString(),
                 Approved: "Requesting",
                 UserLevelColSP: userLevel,
-                MemberEmailColSP: memberEmail
             };
 
             context.log("RequestBooking fieldsToCreate:", JSON.stringify(fieldsToCreate));
