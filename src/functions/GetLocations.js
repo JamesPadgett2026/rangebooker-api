@@ -1,37 +1,40 @@
 // RangeBooker API
-// Version: 2026-04-27 07:20 PM Eastern
+// Version: 2026-04-28 10:30 PM Eastern
 // File: src/functions/GetLocations.js
-// Notes:
-// - Keeps GetLocations working
-// - RegisterMember writes to MemberListSP
-// - LoginMember checks MemberListSP for email/password
-// - RequestBooking writes to PendingRequestsListSP
-// - GetLocations now returns real SharePoint item.id for calendar dates
+//
+// Security changes:
+// - GetLocations returns ONLY safe calendar fields
+// - Added GetMyRequests so users only receive their own requests
+// - No raw SharePoint fields are returned
+// - No other users' pending requests are returned
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-27 07:20 PM Eastern";
+const API_VERSION = "2026-04-28 09:30 PM Eastern";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
     const clientId = process.env.CLIENT_ID;
     const clientSecret = process.env.CLIENT_SECRET;
 
-    const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-            client_id: clientId,
-            client_secret: clientSecret,
-            scope: "https://graph.microsoft.com/.default",
-            grant_type: "client_credentials"
-        })
-    });
+    const response = await fetch(
+        `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                client_id: clientId,
+                client_secret: clientSecret,
+                scope: "https://graph.microsoft.com/.default",
+                grant_type: "client_credentials"
+            })
+        }
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(JSON.stringify(data));
+        throw new Error("Token request failed.");
     }
 
     return data.access_token;
@@ -48,7 +51,7 @@ async function getRangeBookerSite(token) {
     const siteData = await siteRes.json();
 
     if (!siteRes.ok) {
-        throw new Error(`Site lookup failed: ${JSON.stringify(siteData)}`);
+        throw new Error("SharePoint site lookup failed.");
     }
 
     return siteData;
@@ -74,6 +77,14 @@ function isDuplicateEmailError(createData) {
     );
 }
 
+function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function formatSafeDate(value) {
+    return value || "";
+}
+
 async function getMemberItems(token, siteId) {
     const listRes = await fetch(
         `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/MemberListSP/items?expand=fields&$top=5000`,
@@ -85,7 +96,24 @@ async function getMemberItems(token, siteId) {
     const listData = await listRes.json();
 
     if (!listRes.ok) {
-        throw new Error(`Member lookup failed: ${JSON.stringify(listData)}`);
+        throw new Error("Member lookup failed.");
+    }
+
+    return listData.value || [];
+}
+
+async function getPendingRequestItems(token, siteId) {
+    const listRes = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/PendingRequestsListSP/items?expand=fields&$top=5000`,
+        {
+            headers: { Authorization: `Bearer ${token}` }
+        }
+    );
+
+    const listData = await listRes.json();
+
+    if (!listRes.ok) {
+        throw new Error("Pending request lookup failed.");
     }
 
     return listData.value || [];
@@ -102,7 +130,7 @@ app.http("GetLocations", {
             const siteData = await getRangeBookerSite(token);
 
             const listRes = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${siteData.id}/lists/CalendarNewSPList/items?expand=fields`,
+                `https://graph.microsoft.com/v1.0/sites/${siteData.id}/lists/CalendarNewSPList/items?expand=fields&$top=5000`,
                 {
                     headers: { Authorization: `Bearer ${token}` }
                 }
@@ -111,20 +139,119 @@ app.http("GetLocations", {
             const listData = await listRes.json();
 
             if (!listRes.ok) {
-                throw new Error(`List lookup failed: ${JSON.stringify(listData)}`);
+                throw new Error("Calendar lookup failed.");
             }
+
+            const locations = (listData.value || []).map((item, index) => {
+                const fields = item.fields || {};
+
+                return {
+                    id: item.id,
+                    name: fields.Title || `Item ${index + 1}`,
+                    dateTimeToSchedule: formatSafeDate(fields.DateTimeToSchedule),
+                    startTime: fields.StartTimeTextColSP || "",
+                    endTime: fields.EndTimeTextColSP || "",
+                    startTimeId: fields.StartTimeTextIDColSP || "",
+                    endTimeId: fields.EndTimeTextIDColSP || "",
+                    availableOrBooked: fields.AvailableOrBooked || "",
+                    displayText:
+                        `${fields.StartTimeTextColSP || ""} - ${fields.EndTimeTextColSP || ""}: ${fields.AvailableOrBooked || ""}`
+                };
+            });
 
             return {
                 status: 200,
                 jsonBody: {
                     success: true,
                     version: API_VERSION,
-                    locations: (listData.value || []).map((item, index) => ({
+                    locations: locations
+                }
+            };
+        } catch (err) {
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+app.http("GetMyRequests", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetMyRequests called. Version: ${API_VERSION}`);
+
+        try {
+            const url = new URL(request.url);
+            const email = normalizeEmail(url.searchParams.get("email"));
+            const memberId = Number(url.searchParams.get("memberId") || 0);
+
+            if (!email && !memberId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Email or memberId is required."
+                    }
+                };
+            }
+
+            const token = await getAccessToken();
+            const siteData = await getRangeBookerSite(token);
+            const items = await getPendingRequestItems(token, siteData.id);
+
+            const myRequests = items
+                .filter(item => {
+                    const fields = item.fields || {};
+
+                    const requestMemberId = Number(fields.MemberIDLOckInColSP || 0);
+                    const requestEmail = normalizeEmail(fields.MemberEmailColSP || fields.EmailColSP || "");
+
+                    if (memberId && requestMemberId === memberId) {
+                        return true;
+                    }
+
+                    if (email && requestEmail && requestEmail === email) {
+                        return true;
+                    }
+
+                    return false;
+                })
+                .map(item => {
+                    const fields = item.fields || {};
+
+                    return {
                         id: item.id,
-                        name: item.fields?.Title || `Item ${index + 1}`,
-                        status: "Active",
-                        fields: item.fields
-                    }))
+                        dateId: fields.DateIDLOckInColSP || "",
+                        requestedDate: fields.DateActualColSP || "",
+                        status: fields.Approved || "Requesting",
+                        userLevel: fields.UserLevelColSP || "",
+                        requestedAt: fields.DateRequestWasAdded || ""
+                    };
+                })
+                .sort((a, b) => {
+                    const levelA = Number(a.userLevel || 0);
+                    const levelB = Number(b.userLevel || 0);
+
+                    if (levelA !== levelB) {
+                        return levelA - levelB;
+                    }
+
+                    return new Date(a.requestedAt) - new Date(b.requestedAt);
+                });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    requests: myRequests
                 }
             };
         } catch (err) {
@@ -162,7 +289,7 @@ app.http("RegisterMember", {
 
             const firstName = String(body.firstName || "").trim();
             const lastName = String(body.lastName || "").trim();
-            const email = String(body.email || "").trim().toLowerCase();
+            const email = normalizeEmail(body.email);
             const phone = String(body.phone || "").trim();
             const password = String(body.password || "");
             const notes = String(body.notes || "").trim();
@@ -224,7 +351,7 @@ app.http("RegisterMember", {
                     };
                 }
 
-                throw new Error(`Member create failed: ${JSON.stringify(createData)}`);
+                throw new Error("Member create failed.");
             }
 
             return {
@@ -269,7 +396,7 @@ app.http("LoginMember", {
         try {
             const body = await request.json();
 
-            const email = String(body.email || "").trim().toLowerCase();
+            const email = normalizeEmail(body.email);
             const password = String(body.password || "");
 
             if (!email || !password) {
@@ -290,9 +417,9 @@ app.http("LoginMember", {
             const matchingMember = members.find(item => {
                 const fields = item.fields || {};
 
-                const email1 = String(fields.email || "").trim().toLowerCase();
-                const email2 = String(fields.loginemail || "").trim().toLowerCase();
-                const email3 = String(fields.EmailColSP || "").trim().toLowerCase();
+                const email1 = normalizeEmail(fields.email);
+                const email2 = normalizeEmail(fields.loginemail);
+                const email3 = normalizeEmail(fields.EmailColSP);
 
                 return email1 === email || email2 === email || email3 === email;
             });
@@ -323,7 +450,12 @@ app.http("LoginMember", {
                 };
             }
 
-            if (activeValue && activeValue !== "yes" && activeValue !== "true" && activeValue !== "active") {
+            if (
+                activeValue &&
+                activeValue !== "yes" &&
+                activeValue !== "true" &&
+                activeValue !== "active"
+            ) {
                 return {
                     status: 403,
                     jsonBody: {
@@ -386,6 +518,7 @@ app.http("RequestBooking", {
             const memberId = Number(body.memberId || 0);
             const userLevel = Number(body.userLevel || 1);
             const memberName = String(body.memberName || "").trim();
+            const memberEmail = normalizeEmail(body.memberEmail || body.email);
             const dateActual = String(body.dateActual || "").trim();
             const dateId = Number(body.dateId || 0);
 
@@ -410,6 +543,7 @@ app.http("RequestBooking", {
                 Approved: "Requesting",
                 UserLevelColSP: userLevel,
                 MemberNameCombinedColSP: memberName,
+                MemberEmailColSP: memberEmail,
                 DateActualColSP: dateActual,
                 DateIDLOckInColSP: dateId
             };
@@ -429,7 +563,7 @@ app.http("RequestBooking", {
             const createData = await createRes.json();
 
             if (!createRes.ok) {
-                throw new Error(`Booking request failed: ${JSON.stringify(createData)}`);
+                throw new Error("Booking request failed.");
             }
 
             return {
