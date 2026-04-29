@@ -1,16 +1,10 @@
 // RangeBooker API
-// Version: 2026-04-28 10:30 PM Eastern
+// Version: 2026-04-29 Membership Approval Login Update
 // File: src/functions/GetLocations.js
-//
-// Security changes:
-// - GetLocations returns ONLY safe calendar fields
-// - Added GetMyRequests so users only receive their own requests
-// - No raw SharePoint fields are returned
-// - No other users' pending requests are returned
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-28 09:30 PM Eastern";
+const API_VERSION = "2026-04-29 Membership Approval Login Update";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -321,6 +315,7 @@ app.http("RegisterMember", {
                 Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : 0,
                 MemberType: 1,
                 Active: "Yes",
+                MembershipRequestApproved: "No",
                 DateJoined: new Date().toISOString(),
                 Notes: notes || ""
             };
@@ -359,7 +354,7 @@ app.http("RegisterMember", {
                 jsonBody: {
                     success: true,
                     version: API_VERSION,
-                    message: "Member created in SharePoint.",
+                    message: "Member created in SharePoint. Account is pending approval.",
                     itemId: createData.id
                 }
             };
@@ -438,6 +433,7 @@ app.http("LoginMember", {
             const fields = matchingMember.fields || {};
             const savedPassword = String(fields.PasswordColSP || "");
             const activeValue = String(fields.Active || "").trim().toLowerCase();
+            const approvedValue = String(fields.MembershipRequestApproved || "").trim().toLowerCase();
 
             if (savedPassword !== password) {
                 return {
@@ -446,6 +442,17 @@ app.http("LoginMember", {
                         success: false,
                         version: API_VERSION,
                         error: "Invalid email or password."
+                    }
+                };
+            }
+
+            if (approvedValue !== "yes") {
+                return {
+                    status: 403,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Your account has not been approved yet."
                     }
                 };
             }
@@ -478,7 +485,8 @@ app.http("LoginMember", {
                         lastName: fields.LastNameColSP || "",
                         email: email,
                         title: fields.Title || "",
-                        memberType: fields.MemberType || 1
+                        memberType: fields.MemberType || 1,
+                        membershipRequestApproved: fields.MembershipRequestApproved || ""
                     }
                 }
             };
