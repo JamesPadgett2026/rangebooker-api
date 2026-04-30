@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-04-29 FINAL FIXED FULL API
+// Version: 2026-04-29 FINAL FIXED FULL API WITH MEMBER DATES
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-29 FINAL FIXED FULL API";
+const API_VERSION = "2026-04-29 FINAL FIXED FULL API WITH MEMBER DATES";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -107,6 +107,27 @@ async function getPendingRequestItems(token, siteId) {
     }
 
     return data.value || [];
+}
+
+async function updateMemberLastLogin(token, siteId, memberId, lastLoginValue) {
+    const res = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/MemberListSP/items/${memberId}/fields`,
+        {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                LastLogin: lastLoginValue
+            })
+        }
+    );
+
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error("LastLogin update failed: " + JSON.stringify(data));
+    }
 }
 
 
@@ -217,6 +238,8 @@ app.http("RegisterMember", {
                 };
             }
 
+            const nowIso = new Date().toISOString();
+
             const phoneParts = splitPhone(phone);
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
@@ -234,7 +257,8 @@ app.http("RegisterMember", {
                 MemberType: 1,
                 Active: "Yes",
                 MembershipRequestApproved: "No",
-                DateJoined: new Date().toISOString(),
+                DateJoined: nowIso,
+                LastLogin: nowIso,
                 Notes: notes || ""
             };
 
@@ -396,6 +420,10 @@ app.http("LoginMember", {
                 };
             }
 
+            const lastLoginNow = new Date().toISOString();
+
+            await updateMemberLastLogin(token, site.id, member.id, lastLoginNow);
+
             return {
                 status: 200,
                 jsonBody: {
@@ -409,7 +437,9 @@ app.http("LoginMember", {
                         email: email,
                         title: f.Title || "",
                         memberType: f.MemberType || 1,
-                        membershipRequestApproved: f.MembershipRequestApproved || ""
+                        membershipRequestApproved: f.MembershipRequestApproved || "",
+                        dateJoined: f.DateJoined || "",
+                        lastLogin: lastLoginNow
                     }
                 }
             };
