@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-04-29 FINAL FIXED FULL API WITH MEMBER DATES
+// Version: 2026-05-04 ADDED SPLASH PAGE PASSWORD API
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-04-29 FINAL FIXED FULL API WITH MEMBER DATES";
+const API_VERSION = "2026-05-04 ADDED SPLASH PAGE PASSWORD API";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -706,6 +706,58 @@ app.http("DeleteRequest", {
                     success: true,
                     version: API_VERSION,
                     message: "Request deleted."
+                }
+            };
+
+        } catch (err) {
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+
+//
+// GET SPLASH PAGE PASSWORD
+//
+app.http("GetSplashPagePassword", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetSplashPagePassword called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const res = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/SplashPagePassword/items?expand=fields&$top=1`,
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error("SplashPagePassword lookup failed: " + JSON.stringify(data));
+            }
+
+            const item = (data.value || [])[0];
+            const f = item?.fields || {};
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    password: f.SplashPagePasswordColSP || ""
                 }
             };
 
