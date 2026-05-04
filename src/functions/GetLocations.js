@@ -234,7 +234,6 @@ app.http("GetLocations", {
         }
     }
 });
-
 //
 // GET EVENTS
 //
@@ -254,7 +253,7 @@ app.http("GetEvents", {
 
             const results = events.map(item => {
                 const f = item.fields || {};
-                const eventId = Number(item.id);
+                const eventId = Number(f.ID || item.id);
 
                 const base64Photo = base64Photos.find(photo => {
                     const pf = photo.fields || {};
@@ -281,31 +280,39 @@ app.http("GetEvents", {
 
                 const eventDate =
                     f.EventDate ||
-                    f.Date ||
-                    f.DateColSP ||
-                    f.EventDateColSP ||
+                    f.WhenCreated ||
                     "";
 
                 return {
                     id: eventId,
-                    title: f.Title || "Untitled Event",
+
+                    title:
+                        f.EventNameColSP ||
+                        f.Title ||
+                        "Untitled Event",
+
                     description:
                         f.Description ||
-                        f.EventDescription ||
-                        f.EventDescriptionColSP ||
                         "",
-                    location:
-                        f.Location ||
-                        f.EventLocation ||
-                        f.EventLocationColSP ||
-                        "",
-                    time:
-                        f.Time ||
-                        f.EventTime ||
-                        f.EventTimeColSP ||
-                        "",
-                    eventDate,
+
+                    eventDate: eventDate,
                     eventDateText: formatEventDate(eventDate),
+
+                    createdDate:
+                        f.WhenCreated ||
+                        "",
+
+                    createdDateText:
+                        formatEventDate(f.WhenCreated || ""),
+
+                    createdById:
+                        f.CreatedByIDColSP ||
+                        "",
+
+                    createdByName:
+                        f.CreatedName ||
+                        "",
+
                     imageDataUrl,
                     imageUrl
                 };
