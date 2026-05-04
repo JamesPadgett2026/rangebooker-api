@@ -741,13 +741,18 @@ app.http("GetSplashPagePassword", {
             const item = (data.value || [])[0];
             const f = item?.fields || {};
 
+            const base64Image = String(f.Base64ColSP || "")
+                .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
+                .replace(/^data:image;application\/octet-stream;base64,/, "")
+                .trim();
+
             return {
                 status: 200,
                 jsonBody: {
                     success: true,
                     version: API_VERSION,
                     password: f.SplashPagePasswordColSP || "",
-                    imageBase64: f.Base64TextColSP || ""
+                    imageBase64: base64Image
                 }
             };
 
