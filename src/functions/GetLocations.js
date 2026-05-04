@@ -752,14 +752,15 @@ app.http("GetSplashPagePassword", {
             const item = (data.value || [])[0];
             const f = item?.fields || {};
 
-            return {
-                status: 200,
-                jsonBody: {
-                    success: true,
-                    version: API_VERSION,
-                    password: f.SplashPagePasswordColSP || ""
-                }
-            };
+         return {
+    status: 200,
+    jsonBody: {
+        success: true,
+        version: API_VERSION,
+        password: f.SplashPagePasswordColSP || "",
+        image: f.SplashImage || ""
+    }
+};
 
         } catch (err) {
             return {
