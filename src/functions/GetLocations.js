@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-05-04 FIXED SPLASH PAGE BASE64 IMAGE API
+// Version: 2026-05-04 EVENTS API ADDED
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-04 FIXED SPLASH PAGE BASE64 IMAGE API";
+const API_VERSION = "2026-05-04 EVENTS API ADDED";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -51,6 +51,23 @@ async function getRangeBookerSite(token) {
     return data;
 }
 
+async function getListItems(token, siteId, listName) {
+    const res = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listName}/items?expand=fields&$top=5000`,
+        {
+            headers: { Authorization: `Bearer ${token}` }
+        }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+        throw new Error(`${listName} lookup failed: ` + JSON.stringify(data));
+    }
+
+    return data.value || [];
+}
+
 function normalizeEmail(value) {
     return String(value || "").trim().toLowerCase();
 }
@@ -75,38 +92,72 @@ function isDuplicateEmailError(data) {
     );
 }
 
-async function getMemberItems(token, siteId) {
-    const res = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/MemberListSP/items?expand=fields&$top=5000`,
-        {
-            headers: { Authorization: `Bearer ${token}` }
-        }
-    );
+function buildImageDataUrl(base64Value) {
+    const cleanBase64 = String(base64Value || "")
+        .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
+        .replace(/^data:image;application\/octet-stream;base64,/, "")
+        .trim();
 
-    const data = await res.json();
-
-    if (!res.ok) {
-        throw new Error("Member lookup failed: " + JSON.stringify(data));
+    if (!cleanBase64) {
+        return "";
     }
 
-    return data.value || [];
+    let mimeType = "image/png";
+
+    if (cleanBase64.startsWith("/9j/")) {
+        mimeType = "image/jpeg";
+    }
+
+    return `data:${mimeType};base64,${cleanBase64}`;
+}
+
+function getImageUrlFromGraphImageColumn(imageValue) {
+    if (!imageValue) {
+        return "";
+    }
+
+    try {
+        let img = imageValue;
+
+        if (typeof imageValue === "string") {
+            img = JSON.parse(imageValue);
+        }
+
+        if (img.serverUrl && img.serverRelativeUrl) {
+            return img.serverUrl + img.serverRelativeUrl;
+        }
+
+        return img.url || img.Url || "";
+    } catch {
+        return "";
+    }
+}
+
+function formatEventDate(value) {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+
+    if (isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+    });
+}
+
+async function getMemberItems(token, siteId) {
+    return await getListItems(token, siteId, "MemberListSP");
 }
 
 async function getPendingRequestItems(token, siteId) {
-    const res = await fetch(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/PendingRequestsListSP/items?expand=fields&$top=5000`,
-        {
-            headers: { Authorization: `Bearer ${token}` }
-        }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-        throw new Error("Pending request lookup failed: " + JSON.stringify(data));
-    }
-
-    return data.value || [];
+    return await getListItems(token, siteId, "PendingRequestsListSP");
 }
 
 async function updateMemberLastLogin(token, siteId, memberId, lastLoginValue) {
@@ -143,20 +194,9 @@ app.http("GetLocations", {
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
 
-            const res = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/CalendarNewSPList/items?expand=fields&$top=5000`,
-                {
-                    headers: { Authorization: `Bearer ${token}` }
-                }
-            );
+            const items = await getListItems(token, site.id, "CalendarNewSPList");
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error("Calendar lookup failed: " + JSON.stringify(data));
-            }
-
-            const locations = (data.value || []).map((item, index) => {
+            const locations = items.map((item, index) => {
                 const f = item.fields || {};
 
                 return {
@@ -179,6 +219,111 @@ app.http("GetLocations", {
                     success: true,
                     version: API_VERSION,
                     locations
+                }
+            };
+
+        } catch (err) {
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+//
+// GET EVENTS
+//
+app.http("GetEvents", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetEvents called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const events = await getListItems(token, site.id, "EventListMaster");
+            const base64Photos = await getListItems(token, site.id, "EventPhotosBase64");
+            const galleryPhotos = await getListItems(token, site.id, "EventPhotoGallery");
+
+            const results = events.map(item => {
+                const f = item.fields || {};
+                const eventId = Number(item.id);
+
+                const base64Photo = base64Photos.find(photo => {
+                    const pf = photo.fields || {};
+                    return Number(pf.EventLockInIDColSP || 0) === eventId;
+                });
+
+                const galleryPhoto = galleryPhotos.find(photo => {
+                    const pf = photo.fields || {};
+                    return Number(pf.GalleryIDLockInColSP || 0) === eventId;
+                });
+
+                let imageDataUrl = "";
+                let imageUrl = "";
+
+                if (base64Photo) {
+                    const pf = base64Photo.fields || {};
+                    imageDataUrl = buildImageDataUrl(pf.Base64ColSP);
+                }
+
+                if (!imageDataUrl && galleryPhoto) {
+                    const pf = galleryPhoto.fields || {};
+                    imageUrl = getImageUrlFromGraphImageColumn(pf.Image);
+                }
+
+                const eventDate =
+                    f.EventDate ||
+                    f.Date ||
+                    f.DateColSP ||
+                    f.EventDateColSP ||
+                    "";
+
+                return {
+                    id: eventId,
+                    title: f.Title || "Untitled Event",
+                    description:
+                        f.Description ||
+                        f.EventDescription ||
+                        f.EventDescriptionColSP ||
+                        "",
+                    location:
+                        f.Location ||
+                        f.EventLocation ||
+                        f.EventLocationColSP ||
+                        "",
+                    time:
+                        f.Time ||
+                        f.EventTime ||
+                        f.EventTimeColSP ||
+                        "",
+                    eventDate,
+                    eventDateText: formatEventDate(eventDate),
+                    imageDataUrl,
+                    imageUrl
+                };
+            });
+
+            results.sort((a, b) => {
+                const dateA = new Date(a.eventDate || "2100-01-01");
+                const dateB = new Date(b.eventDate || "2100-01-01");
+                return dateA - dateB;
+            });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    count: results.length,
+                    events: results
                 }
             };
 
@@ -237,7 +382,6 @@ app.http("RegisterMember", {
             }
 
             const nowIso = new Date().toISOString();
-
             const phoneParts = splitPhone(phone);
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
@@ -725,20 +869,9 @@ app.http("GetSplashPagePassword", {
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
 
-            const res = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/SplashPagePassword/items?expand=fields&$top=1`,
-                {
-                    headers: { Authorization: `Bearer ${token}` }
-                }
-            );
+            const items = await getListItems(token, site.id, "SplashPagePassword");
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error("SplashPagePassword lookup failed: " + JSON.stringify(data));
-            }
-
-            const item = (data.value || [])[0];
+            const item = items[0];
             const f = item?.fields || {};
 
             const base64Image = String(f.Base64ColSP || "")
@@ -768,226 +901,3 @@ app.http("GetSplashPagePassword", {
         }
     }
 });
-const { app } = require("@azure/functions");
-
-app.http("GetEvents", {
-    methods: ["GET"],
-    authLevel: "anonymous",
-    handler: async (request, context) => {
-        try {
-            const tenantId = process.env.TENANT_ID;
-            const clientId = process.env.CLIENT_ID;
-            const clientSecret = process.env.CLIENT_SECRET;
-            const sharePointSiteUrl = process.env.SHAREPOINT_SITE_URL;
-
-            const token = await getSharePointToken(tenantId, clientId, clientSecret, sharePointSiteUrl);
-
-            const events = await getSharePointListItems(
-                sharePointSiteUrl,
-                "EventListMaster",
-                token
-            );
-
-            const base64Photos = await getSharePointListItems(
-                sharePointSiteUrl,
-                "EventPhotosBase64",
-                token
-            );
-
-            const galleryPhotos = await getSharePointListItems(
-                sharePointSiteUrl,
-                "EventPhotoGallery",
-                token
-            );
-
-            const results = [];
-
-            for (const eventItem of events) {
-                const eventId = eventItem.ID;
-
-                const base64Photo = base64Photos.find(photo =>
-                    Number(photo.EventLockInIDColSP) === Number(eventId)
-                );
-
-                const galleryPhoto = galleryPhotos.find(photo =>
-                    Number(photo.GalleryIDLockInColSP) === Number(eventId)
-                );
-
-                let imageDataUrl = "";
-
-                if (base64Photo && base64Photo.Base64ColSP) {
-                    imageDataUrl = buildImageDataUrl(base64Photo.Base64ColSP);
-                } else if (galleryPhoto && galleryPhoto.Image) {
-                    imageDataUrl = await getImageColumnAsDataUrl(
-                        sharePointSiteUrl,
-                        galleryPhoto.Image,
-                        token
-                    );
-                }
-
-                results.push({
-                    id: eventId,
-                    title: eventItem.Title || "",
-                    description: eventItem.Description || eventItem.EventDescription || "",
-                    location: eventItem.Location || eventItem.EventLocation || "",
-                    time: eventItem.Time || eventItem.EventTime || "",
-                    eventDate: eventItem.EventDate || eventItem.Date || "",
-                    eventDateText: formatEventDate(eventItem.EventDate || eventItem.Date),
-                    imageDataUrl: imageDataUrl
-                });
-            }
-
-            results.sort((a, b) => {
-                const dateA = new Date(a.eventDate || "2100-01-01");
-                const dateB = new Date(b.eventDate || "2100-01-01");
-                return dateA - dateB;
-            });
-
-            return {
-                status: 200,
-                jsonBody: {
-                    success: true,
-                    count: results.length,
-                    events: results
-                }
-            };
-
-        } catch (err) {
-            context.error(err);
-
-            return {
-                status: 500,
-                jsonBody: {
-                    success: false,
-                    error: err.message
-                }
-            };
-        }
-    }
-});
-
-async function getSharePointToken(tenantId, clientId, clientSecret, sharePointSiteUrl) {
-    const sharePointHost = new URL(sharePointSiteUrl).origin;
-
-    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-
-    const body = new URLSearchParams();
-    body.append("client_id", clientId);
-    body.append("client_secret", clientSecret);
-    body.append("scope", `${sharePointHost}/.default`);
-    body.append("grant_type", "client_credentials");
-
-    const res = await fetch(tokenUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-        throw new Error("Could not get SharePoint token: " + JSON.stringify(data));
-    }
-
-    return data.access_token;
-}
-
-async function getSharePointListItems(siteUrl, listTitle, token) {
-    const url =
-        `${siteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')/items?$top=5000`;
-
-    const res = await fetch(url, {
-        headers: {
-            "Authorization": `Bearer ${token}`,
-            "Accept": "application/json;odata=nometadata"
-        }
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-        throw new Error(`Could not read SharePoint list ${listTitle}: ` + JSON.stringify(data));
-    }
-
-    return data.value || [];
-}
-
-function buildImageDataUrl(base64Value) {
-    let cleanBase64 = String(base64Value || "")
-        .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
-        .replace(/^data:image;application\/octet-stream;base64,/, "")
-        .trim();
-
-    let mimeType = "image/png";
-
-    if (cleanBase64.startsWith("/9j/")) {
-        mimeType = "image/jpeg";
-    }
-
-    return `data:${mimeType};base64,${cleanBase64}`;
-}
-
-async function getImageColumnAsDataUrl(siteUrl, imageColumnValue, token) {
-    try {
-        let imageInfo = imageColumnValue;
-
-        if (typeof imageColumnValue === "string") {
-            imageInfo = JSON.parse(imageColumnValue);
-        }
-
-        let imageUrl = "";
-
-        if (imageInfo.serverUrl && imageInfo.serverRelativeUrl) {
-            imageUrl = imageInfo.serverUrl + imageInfo.serverRelativeUrl;
-        } else if (imageInfo.Url) {
-            imageUrl = imageInfo.Url;
-        } else if (imageInfo.url) {
-            imageUrl = imageInfo.url;
-        }
-
-        if (!imageUrl) {
-            return "";
-        }
-
-        const res = await fetch(imageUrl, {
-            headers: {
-                "Authorization": `Bearer ${token}`
-            }
-        });
-
-        if (!res.ok) {
-            return "";
-        }
-
-        const arrayBuffer = await res.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        let mimeType = res.headers.get("content-type") || "image/jpeg";
-
-        return `data:${mimeType};base64,${buffer.toString("base64")}`;
-
-    } catch {
-        return "";
-    }
-}
-
-function formatEventDate(value) {
-    if (!value) {
-        return "";
-    }
-
-    const date = new Date(value);
-
-    if (isNaN(date.getTime())) {
-        return String(value);
-    }
-
-    return date.toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric"
-    });
-}
