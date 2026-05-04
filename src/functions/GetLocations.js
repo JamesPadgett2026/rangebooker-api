@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-05-04 ADDED SPLASH PAGE PASSWORD + IMAGE API
+// Version: 2026-05-04 FIXED SPLASH PAGE BASE64 IMAGE API
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-04 ADDED SPLASH PAGE PASSWORD + IMAGE API";
+const API_VERSION = "2026-05-04 FIXED SPLASH PAGE BASE64 IMAGE API";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -488,11 +488,7 @@ app.http("GetMyRequests", {
                     const f = item.fields || {};
                     const requestMemberId = Number(f.MemberIDLOckInColSP || 0);
 
-                    if (memberId && requestMemberId === memberId) {
-                        return true;
-                    }
-
-                    return false;
+                    return Boolean(memberId && requestMemberId === memberId);
                 })
                 .map(item => {
                     const f = item.fields || {};
@@ -717,7 +713,7 @@ app.http("DeleteRequest", {
 });
 
 //
-// GET SPLASH PAGE PASSWORD + IMAGE
+// GET SPLASH PAGE PASSWORD + BASE64 IMAGE
 //
 app.http("GetSplashPagePassword", {
     methods: ["GET"],
@@ -751,8 +747,7 @@ app.http("GetSplashPagePassword", {
                     success: true,
                     version: API_VERSION,
                     password: f.SplashPagePasswordColSP || "",
-                    image: f.ImageColSP || "",
-                    imageRaw: f.ImageColSP || ""
+                    imageBase64: f.Base64TextColSP || ""
                 }
             };
 
