@@ -768,3 +768,226 @@ app.http("GetSplashPagePassword", {
         }
     }
 });
+const { app } = require("@azure/functions");
+
+app.http("GetEvents", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        try {
+            const tenantId = process.env.TENANT_ID;
+            const clientId = process.env.CLIENT_ID;
+            const clientSecret = process.env.CLIENT_SECRET;
+            const sharePointSiteUrl = process.env.SHAREPOINT_SITE_URL;
+
+            const token = await getSharePointToken(tenantId, clientId, clientSecret, sharePointSiteUrl);
+
+            const events = await getSharePointListItems(
+                sharePointSiteUrl,
+                "EventListMaster",
+                token
+            );
+
+            const base64Photos = await getSharePointListItems(
+                sharePointSiteUrl,
+                "EventPhotosBase64",
+                token
+            );
+
+            const galleryPhotos = await getSharePointListItems(
+                sharePointSiteUrl,
+                "EventPhotoGallery",
+                token
+            );
+
+            const results = [];
+
+            for (const eventItem of events) {
+                const eventId = eventItem.ID;
+
+                const base64Photo = base64Photos.find(photo =>
+                    Number(photo.EventLockInIDColSP) === Number(eventId)
+                );
+
+                const galleryPhoto = galleryPhotos.find(photo =>
+                    Number(photo.GalleryIDLockInColSP) === Number(eventId)
+                );
+
+                let imageDataUrl = "";
+
+                if (base64Photo && base64Photo.Base64ColSP) {
+                    imageDataUrl = buildImageDataUrl(base64Photo.Base64ColSP);
+                } else if (galleryPhoto && galleryPhoto.Image) {
+                    imageDataUrl = await getImageColumnAsDataUrl(
+                        sharePointSiteUrl,
+                        galleryPhoto.Image,
+                        token
+                    );
+                }
+
+                results.push({
+                    id: eventId,
+                    title: eventItem.Title || "",
+                    description: eventItem.Description || eventItem.EventDescription || "",
+                    location: eventItem.Location || eventItem.EventLocation || "",
+                    time: eventItem.Time || eventItem.EventTime || "",
+                    eventDate: eventItem.EventDate || eventItem.Date || "",
+                    eventDateText: formatEventDate(eventItem.EventDate || eventItem.Date),
+                    imageDataUrl: imageDataUrl
+                });
+            }
+
+            results.sort((a, b) => {
+                const dateA = new Date(a.eventDate || "2100-01-01");
+                const dateB = new Date(b.eventDate || "2100-01-01");
+                return dateA - dateB;
+            });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    count: results.length,
+                    events: results
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+async function getSharePointToken(tenantId, clientId, clientSecret, sharePointSiteUrl) {
+    const sharePointHost = new URL(sharePointSiteUrl).origin;
+
+    const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+
+    const body = new URLSearchParams();
+    body.append("client_id", clientId);
+    body.append("client_secret", clientSecret);
+    body.append("scope", `${sharePointHost}/.default`);
+    body.append("grant_type", "client_credentials");
+
+    const res = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+        throw new Error("Could not get SharePoint token: " + JSON.stringify(data));
+    }
+
+    return data.access_token;
+}
+
+async function getSharePointListItems(siteUrl, listTitle, token) {
+    const url =
+        `${siteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')/items?$top=5000`;
+
+    const res = await fetch(url, {
+        headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/json;odata=nometadata"
+        }
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+        throw new Error(`Could not read SharePoint list ${listTitle}: ` + JSON.stringify(data));
+    }
+
+    return data.value || [];
+}
+
+function buildImageDataUrl(base64Value) {
+    let cleanBase64 = String(base64Value || "")
+        .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
+        .replace(/^data:image;application\/octet-stream;base64,/, "")
+        .trim();
+
+    let mimeType = "image/png";
+
+    if (cleanBase64.startsWith("/9j/")) {
+        mimeType = "image/jpeg";
+    }
+
+    return `data:${mimeType};base64,${cleanBase64}`;
+}
+
+async function getImageColumnAsDataUrl(siteUrl, imageColumnValue, token) {
+    try {
+        let imageInfo = imageColumnValue;
+
+        if (typeof imageColumnValue === "string") {
+            imageInfo = JSON.parse(imageColumnValue);
+        }
+
+        let imageUrl = "";
+
+        if (imageInfo.serverUrl && imageInfo.serverRelativeUrl) {
+            imageUrl = imageInfo.serverUrl + imageInfo.serverRelativeUrl;
+        } else if (imageInfo.Url) {
+            imageUrl = imageInfo.Url;
+        } else if (imageInfo.url) {
+            imageUrl = imageInfo.url;
+        }
+
+        if (!imageUrl) {
+            return "";
+        }
+
+        const res = await fetch(imageUrl, {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        if (!res.ok) {
+            return "";
+        }
+
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        let mimeType = res.headers.get("content-type") || "image/jpeg";
+
+        return `data:${mimeType};base64,${buffer.toString("base64")}`;
+
+    } catch {
+        return "";
+    }
+}
+
+function formatEventDate(value) {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(value);
+
+    if (isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+    });
+}
