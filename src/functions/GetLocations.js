@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-05-04 ADDED SPLASH PAGE PASSWORD API
+// Version: 2026-05-04 ADDED SPLASH PAGE PASSWORD + IMAGE API
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-04 ADDED SPLASH PAGE PASSWORD API";
+const API_VERSION = "2026-05-04 ADDED SPLASH PAGE PASSWORD + IMAGE API";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -130,7 +130,6 @@ async function updateMemberLastLogin(token, siteId, memberId, lastLoginValue) {
     }
 }
 
-
 //
 // GET LOCATIONS / CALENDAR
 //
@@ -195,7 +194,6 @@ app.http("GetLocations", {
         }
     }
 });
-
 
 //
 // REGISTER MEMBER
@@ -313,7 +311,6 @@ app.http("RegisterMember", {
         }
     }
 });
-
 
 //
 // LOGIN MEMBER
@@ -457,7 +454,6 @@ app.http("LoginMember", {
     }
 });
 
-
 //
 // GET MY REQUESTS
 //
@@ -542,7 +538,6 @@ app.http("GetMyRequests", {
         }
     }
 });
-
 
 //
 // REQUEST BOOKING
@@ -646,7 +641,6 @@ app.http("RequestBooking", {
     }
 });
 
-
 //
 // DELETE REQUEST
 //
@@ -722,9 +716,8 @@ app.http("DeleteRequest", {
     }
 });
 
-
 //
-// GET SPLASH PAGE PASSWORD
+// GET SPLASH PAGE PASSWORD + IMAGE
 //
 app.http("GetSplashPagePassword", {
     methods: ["GET"],
@@ -752,15 +745,16 @@ app.http("GetSplashPagePassword", {
             const item = (data.value || [])[0];
             const f = item?.fields || {};
 
-         return {
-    status: 200,
-    jsonBody: {
-        success: true,
-        version: API_VERSION,
-        password: f.SplashPagePasswordColSP || "",
-        image: f.SplashImage || ""
-    }
-};
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    password: f.SplashPagePasswordColSP || "",
+                    image: f.ImageColSP || "",
+                    imageRaw: f.ImageColSP || ""
+                }
+            };
 
         } catch (err) {
             return {
