@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-05-04 EVENTS API ADDED
+// Version: 2026-05-04 EVENTS API ADDED - TODAY/FUTURE CALENDAR FILTER FIXED
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-04 EVENTS API ADDED";
+const API_VERSION = "2026-05-04 EVENTS API ADDED - TODAY/FUTURE CALENDAR FILTER FIXED";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -111,28 +111,6 @@ function buildImageDataUrl(base64Value) {
     return `data:${mimeType};base64,${cleanBase64}`;
 }
 
-function getImageUrlFromGraphImageColumn(imageValue) {
-    if (!imageValue) {
-        return "";
-    }
-
-    try {
-        let img = imageValue;
-
-        if (typeof imageValue === "string") {
-            img = JSON.parse(imageValue);
-        }
-
-        if (img.serverUrl && img.serverRelativeUrl) {
-            return img.serverUrl + img.serverRelativeUrl;
-        }
-
-        return img.url || img.Url || "";
-    } catch {
-        return "";
-    }
-}
-
 function formatEventDate(value) {
     if (!value) {
         return "";
@@ -196,22 +174,44 @@ app.http("GetLocations", {
 
             const items = await getListItems(token, site.id, "CalendarNewSPList");
 
-            const locations = items.map((item, index) => {
-                const f = item.fields || {};
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-                return {
-                    id: item.id,
-                    name: f.Title || `Item ${index + 1}`,
-                    dateTimeToSchedule: f.DateTimeToSchedule || "",
-                    startTime: f.StartTimeTextColSP || "",
-                    endTime: f.EndTimeTextColSP || "",
-                    startTimeId: f.StartTimeTextIDColSP || "",
-                    endTimeId: f.EndTimeTextIDColSP || "",
-                    availableOrBooked: f.AvailableOrBooked || "",
-                    displayText:
-                        `${f.StartTimeTextColSP || ""} - ${f.EndTimeTextColSP || ""}: ${f.AvailableOrBooked || ""}`
-                };
-            });
+            const locations = items
+                .map((item, index) => {
+                    const f = item.fields || {};
+
+                    return {
+                        id: item.id,
+                        name: f.Title || `Item ${index + 1}`,
+                        dateTimeToSchedule: f.DateTimeToSchedule || "",
+                        startTime: f.StartTimeTextColSP || "",
+                        endTime: f.EndTimeTextColSP || "",
+                        startTimeId: f.StartTimeTextIDColSP || "",
+                        endTimeId: f.EndTimeTextIDColSP || "",
+                        availableOrBooked: f.AvailableOrBooked || "",
+                        displayText:
+                            `${f.StartTimeTextColSP || ""} - ${f.EndTimeTextColSP || ""}: ${f.AvailableOrBooked || ""}`
+                    };
+                })
+                .filter(loc => {
+                    if (!loc.dateTimeToSchedule) {
+                        return false;
+                    }
+
+                    const d = new Date(loc.dateTimeToSchedule);
+
+                    if (isNaN(d.getTime())) {
+                        return false;
+                    }
+
+                    d.setHours(0, 0, 0, 0);
+
+                    return d >= today;
+                })
+                .sort((a, b) => {
+                    return new Date(a.dateTimeToSchedule) - new Date(b.dateTimeToSchedule);
+                });
 
             return {
                 status: 200,
@@ -223,6 +223,8 @@ app.http("GetLocations", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -234,8 +236,9 @@ app.http("GetLocations", {
         }
     }
 });
+
 //
-// GET EVENTS (BASE64 ONLY + DEBUG)
+// GET EVENTS
 //
 app.http("GetEvents", {
     methods: ["GET"],
@@ -258,7 +261,6 @@ app.http("GetEvents", {
 
                 const photos = base64Photos.filter(photo => {
                     const pf = photo.fields || {};
-
                     return Number(pf.EventLockInIDColSP || 0) === eventId;
                 });
 
@@ -276,33 +278,25 @@ app.http("GetEvents", {
 
                 return {
                     id: eventId,
-
                     title:
                         f.EventNameColSP ||
                         f.Title ||
                         "Untitled Event",
-
                     description:
                         f.Description ||
                         "",
-
                     eventDate: eventDate,
                     eventDateText: formatEventDate(eventDate),
-
                     createdDate:
                         f.WhenCreated ||
                         "",
-
                     createdDateText:
                         formatEventDate(f.WhenCreated || ""),
-
                     createdByName:
                         f.CreatedName ||
                         "",
-
                     images: images,
                     imageDataUrl: images.length > 0 ? images[0] : "",
-
                     debugPhotoInfo: {
                         eventId: eventId,
                         totalBase64Photos: base64Photos.length,
@@ -343,6 +337,7 @@ app.http("GetEvents", {
         }
     }
 });
+
 //
 // REGISTER MEMBER
 //
@@ -447,6 +442,8 @@ app.http("RegisterMember", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -589,6 +586,8 @@ app.http("LoginMember", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -670,6 +669,8 @@ app.http("GetMyRequests", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -772,6 +773,8 @@ app.http("RequestBooking", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -847,6 +850,8 @@ app.http("DeleteRequest", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -893,6 +898,8 @@ app.http("GetSplashPagePassword", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
