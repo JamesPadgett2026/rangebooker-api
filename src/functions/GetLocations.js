@@ -265,7 +265,7 @@ app.http("GetEvents", {
                 const images = photos
                     .map(photo => {
                         const pf = photo.fields || {};
-                        return buildImageDataUrl(pf.Base64ColSP);
+                        return buildImageDataUrl(pf.Base64);
                     })
                     .filter(src => src);
 
