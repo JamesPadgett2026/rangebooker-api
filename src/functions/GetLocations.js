@@ -234,8 +234,9 @@ app.http("GetLocations", {
         }
     }
 });
+
 //
-// GET EVENTS
+// GET EVENTS (BASE64 ONLY)
 //
 app.http("GetEvents", {
     methods: ["GET"],
@@ -249,34 +250,21 @@ app.http("GetEvents", {
 
             const events = await getListItems(token, site.id, "EventListMaster");
             const base64Photos = await getListItems(token, site.id, "EventPhotosBase64");
-            const galleryPhotos = await getListItems(token, site.id, "EventPhotoGallery");
 
             const results = events.map(item => {
                 const f = item.fields || {};
                 const eventId = Number(f.ID || item.id);
 
-                const base64Photo = base64Photos.find(photo => {
+                // 🔥 GET ALL PHOTOS FOR EVENT
+                const photos = base64Photos.filter(photo => {
                     const pf = photo.fields || {};
                     return Number(pf.EventLockInIDColSP || 0) === eventId;
                 });
 
-                const galleryPhoto = galleryPhotos.find(photo => {
-                    const pf = photo.fields || {};
-                    return Number(pf.GalleryIDLockInColSP || 0) === eventId;
-                });
-
-                let imageDataUrl = "";
-                let imageUrl = "";
-
-                if (base64Photo) {
-                    const pf = base64Photo.fields || {};
-                    imageDataUrl = buildImageDataUrl(pf.Base64ColSP);
-                }
-
-                if (!imageDataUrl && galleryPhoto) {
-                    const pf = galleryPhoto.fields || {};
-                    imageUrl = getImageUrlFromGraphImageColumn(pf.Image);
-                }
+                // 🔥 BUILD IMAGE ARRAY
+                const images = photos
+                    .map(p => buildImageDataUrl(p.fields.Base64ColSP))
+                    .filter(x => x);
 
                 const eventDate =
                     f.EventDate ||
@@ -295,7 +283,7 @@ app.http("GetEvents", {
                         f.Description ||
                         "",
 
-                    eventDate: eventDate,
+                    eventDate,
                     eventDateText: formatEventDate(eventDate),
 
                     createdDate:
@@ -305,16 +293,15 @@ app.http("GetEvents", {
                     createdDateText:
                         formatEventDate(f.WhenCreated || ""),
 
-                    createdById:
-                        f.CreatedByIDColSP ||
-                        "",
-
                     createdByName:
                         f.CreatedName ||
                         "",
 
-                    imageDataUrl,
-                    imageUrl
+                    // 🔥 NEW
+                    images: images,
+
+                    // 🔥 FIRST IMAGE FOR PREVIEW
+                    imageDataUrl: images.length > 0 ? images[0] : ""
                 };
             });
 
@@ -335,6 +322,8 @@ app.http("GetEvents", {
             };
 
         } catch (err) {
+            context.error(err);
+
             return {
                 status: 500,
                 jsonBody: {
@@ -346,7 +335,6 @@ app.http("GetEvents", {
         }
     }
 });
-
 //
 // REGISTER MEMBER
 //
