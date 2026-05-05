@@ -234,9 +234,8 @@ app.http("GetLocations", {
         }
     }
 });
-
 //
-// GET EVENTS (BASE64 ONLY)
+// GET EVENTS (BASE64 ONLY + DEBUG)
 //
 app.http("GetEvents", {
     methods: ["GET"],
@@ -251,20 +250,24 @@ app.http("GetEvents", {
             const events = await getListItems(token, site.id, "EventListMaster");
             const base64Photos = await getListItems(token, site.id, "EventPhotosBase64");
 
+            const firstPhotoFields = base64Photos[0]?.fields || {};
+
             const results = events.map(item => {
                 const f = item.fields || {};
                 const eventId = Number(f.ID || item.id);
 
-                // 🔥 GET ALL PHOTOS FOR EVENT
                 const photos = base64Photos.filter(photo => {
                     const pf = photo.fields || {};
+
                     return Number(pf.EventLockInIDColSP || 0) === eventId;
                 });
 
-                // 🔥 BUILD IMAGE ARRAY
                 const images = photos
-                    .map(p => buildImageDataUrl(p.fields.Base64ColSP))
-                    .filter(x => x);
+                    .map(photo => {
+                        const pf = photo.fields || {};
+                        return buildImageDataUrl(pf.Base64ColSP);
+                    })
+                    .filter(src => src);
 
                 const eventDate =
                     f.EventDate ||
@@ -283,7 +286,7 @@ app.http("GetEvents", {
                         f.Description ||
                         "",
 
-                    eventDate,
+                    eventDate: eventDate,
                     eventDateText: formatEventDate(eventDate),
 
                     createdDate:
@@ -297,11 +300,15 @@ app.http("GetEvents", {
                         f.CreatedName ||
                         "",
 
-                    // 🔥 NEW
                     images: images,
+                    imageDataUrl: images.length > 0 ? images[0] : "",
 
-                    // 🔥 FIRST IMAGE FOR PREVIEW
-                    imageDataUrl: images.length > 0 ? images[0] : ""
+                    debugPhotoInfo: {
+                        eventId: eventId,
+                        totalBase64Photos: base64Photos.length,
+                        matchedPhotos: photos.length,
+                        firstPhotoFields: firstPhotoFields
+                    }
                 };
             });
 
@@ -317,6 +324,7 @@ app.http("GetEvents", {
                     success: true,
                     version: API_VERSION,
                     count: results.length,
+                    totalBase64Photos: base64Photos.length,
                     events: results
                 }
             };
