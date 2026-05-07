@@ -1,10 +1,10 @@
 // RangeBooker API
-// Version: 2026-05-04 EVENTS API ADDED - TODAY/FUTURE CALENDAR FILTER FIXED
+// Version: 2026-05-06 SETTINGS API ADDED
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-04 EVENTS API ADDED - TODAY/FUTURE CALENDAR FILTER FIXED";
+const API_VERSION = "2026-05-06 SETTINGS API ADDED";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -399,7 +399,8 @@ app.http("RegisterMember", {
                 MembershipRequestApproved: "No",
                 DateJoined: nowIso,
                 LastLogin: nowIso,
-                Notes: notes || ""
+                Notes: notes || "",
+                PreferredContactChoice: "None"
             };
 
             const res = await fetch(
@@ -579,6 +580,7 @@ app.http("LoginMember", {
                         title: f.Title || "",
                         memberType: f.MemberType || 1,
                         membershipRequestApproved: f.MembershipRequestApproved || "",
+                        preferredContactChoice: f.PreferredContactChoice || "",
                         dateJoined: f.DateJoined || "",
                         lastLogin: lastLoginNow
                     }
@@ -911,14 +913,26 @@ app.http("GetSplashPagePassword", {
         }
     }
 });
+
 //
 // UPDATE MY SETTINGS
 //
 app.http("UpdateMySettings", {
-    methods: ["POST"],
+    methods: ["GET", "POST"],
     authLevel: "anonymous",
     handler: async (request, context) => {
         context.log(`UpdateMySettings called. Version: ${API_VERSION}`);
+
+        if (request.method === "GET") {
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "UpdateMySettings API is reachable."
+                }
+            };
+        }
 
         try {
             const body = await request.json();
