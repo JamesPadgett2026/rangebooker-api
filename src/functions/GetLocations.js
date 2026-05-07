@@ -911,3 +911,115 @@ app.http("GetSplashPagePassword", {
         }
     }
 });
+//
+// UPDATE MY SETTINGS
+//
+app.http("UpdateMySettings", {
+    methods: ["POST"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`UpdateMySettings called. Version: ${API_VERSION}`);
+
+        try {
+            const body = await request.json();
+
+            const memberId = String(body.memberId || "").trim();
+            const preferredContactChoice = String(body.preferredContactChoice || "").trim();
+            const newPassword = String(body.newPassword || "").trim();
+
+            if (!memberId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Missing memberId."
+                    }
+                };
+            }
+
+            if (!preferredContactChoice) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Missing preferred contact choice."
+                    }
+                };
+            }
+
+            const allowedChoices = ["Text", "Email", "None"];
+
+            if (!allowedChoices.includes(preferredContactChoice)) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Invalid preferred contact choice."
+                    }
+                };
+            }
+
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const fieldsToUpdate = {
+                PreferredContactChoice: preferredContactChoice
+            };
+
+            if (newPassword) {
+                fieldsToUpdate.PasswordColSP = newPassword;
+            }
+
+            const res = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items/${memberId}/fields`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(fieldsToUpdate)
+                }
+            );
+
+            if (!res.ok) {
+                const text = await res.text();
+
+                return {
+                    status: res.status,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "SharePoint update failed.",
+                        details: text
+                    }
+                };
+            }
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "Settings updated successfully.",
+                    preferredContactChoice: preferredContactChoice
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
