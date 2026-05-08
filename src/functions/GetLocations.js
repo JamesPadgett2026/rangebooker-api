@@ -238,7 +238,7 @@ app.http("GetLocations", {
 });
 
 //
-// GET BULLETIN BOARD POSTS
+// GET BULLETIN BOARD POSTS WITH PHOTOS
 //
 app.http("GetBulletinBoardPosts", {
     methods: ["GET"],
@@ -250,24 +250,71 @@ app.http("GetBulletinBoardPosts", {
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
 
-            const items = await getListItems(token, site.id, "BulletinBoardPostsSP");
+            // POSTS
+            const items = await getListItems(
+                token,
+                site.id,
+                "BulletinBoardPostsSP"
+            );
+
+            // PHOTOS
+            const photoItems = await getListItems(
+                token,
+                site.id,
+                "BulletinBoardPhotos"
+            );
 
             const posts = items
                 .map(item => {
                     const f = item.fields || {};
+
+                    const postId = Number(f.ID || item.id);
+
+                    // FIND MATCHING PHOTOS
+                    const matchingPhotos = photoItems
+                        .filter(photo => {
+                            const pf = photo.fields || {};
+
+                            return Number(pf.BBPostIDLockInColSP || 0) === postId;
+                        })
+                        .map(photo => {
+                            const pf = photo.fields || {};
+
+                            return {
+                                id: photo.id,
+                                title: pf.PhotoTitleColSP || "",
+                                image: buildImageDataUrl(
+                                    pf.Base64ColSP || ""
+                                )
+                            };
+                        })
+                        .filter(photo => photo.image);
 
                     return {
                         id: item.id,
                         title: f.PostTitleColSP || f.Title || "Untitled Post",
                         information: f.PostInformationColSP || "",
                         category: f.CategoryColSP || "",
-                        datePostInformation: f.DatePostInformation || "",
-                        dateAdded: f.DateAddedColSP || ""
+                        datePostInformation:
+                            f.DatePostInformation || "",
+                        dateAdded:
+                            f.DateAddedColSP || "",
+
+                        // NEW
+                        photos: matchingPhotos
                     };
                 })
                 .sort((a, b) => {
-                    return new Date(b.datePostInformation || b.dateAdded || 0) -
-                           new Date(a.datePostInformation || a.dateAdded || 0);
+                    return new Date(
+                        b.datePostInformation ||
+                        b.dateAdded ||
+                        0
+                    ) -
+                    new Date(
+                        a.datePostInformation ||
+                        a.dateAdded ||
+                        0
+                    );
                 });
 
             return {
@@ -288,15 +335,7 @@ app.http("GetBulletinBoardPosts", {
                 jsonBody: {
                     success: false,
                     version: API_VERSION,
-                    error: err.message,
-                    listExpected: "BulletinBoardPostsSP",
-                    columnsExpected: [
-                        "PostTitleColSP",
-                        "PostInformationColSP",
-                        "CategoryColSP",
-                        "DatePostInformation",
-                        "DateAddedColSP"
-                    ]
+                    error: err.message
                 }
             };
         }
