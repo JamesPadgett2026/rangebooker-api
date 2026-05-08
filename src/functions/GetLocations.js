@@ -260,16 +260,14 @@ app.http("GetBulletinBoardPosts", {
                         id: item.id,
                         title: f.PostTitleColSP || f.Title || "Untitled Post",
                         information: f.PostInformationColSP || "",
+                        category: f.CategoryColSP || "",
                         datePostInformation: f.DatePostInformation || "",
-                        dateAdded: f.DateAddedColSP || "",
-                        debugFields: f
+                        dateAdded: f.DateAddedColSP || ""
                     };
                 })
                 .sort((a, b) => {
-                    const dateA = new Date(a.dateAdded || a.datePostInformation || 0);
-                    const dateB = new Date(b.dateAdded || b.datePostInformation || 0);
-
-                    return dateB - dateA;
+                    return new Date(b.datePostInformation || b.dateAdded || 0) -
+                           new Date(a.datePostInformation || a.dateAdded || 0);
                 });
 
             return {
@@ -277,9 +275,8 @@ app.http("GetBulletinBoardPosts", {
                 jsonBody: {
                     success: true,
                     version: API_VERSION,
-                    message: "Bulletin board posts loaded.",
                     count: posts.length,
-                    posts
+                    posts: posts
                 }
             };
 
@@ -292,21 +289,19 @@ app.http("GetBulletinBoardPosts", {
                     success: false,
                     version: API_VERSION,
                     error: err.message,
-                    message: "Failed to load bulletin board posts.",
-                    commonChecks: [
-                        "Make sure the SharePoint list is named BulletinBoardPostsSP exactly.",
-                        "Make sure the title column internal name is PostTitleColSP exactly.",
-                        "Make sure the story/body column internal name is PostInformationColSP exactly.",
-                        "Make sure DatePostInformation exists.",
-                        "Make sure DateAddedColSP exists.",
-                        "Make sure this Azure Function file deployed successfully."
+                    listExpected: "BulletinBoardPostsSP",
+                    columnsExpected: [
+                        "PostTitleColSP",
+                        "PostInformationColSP",
+                        "CategoryColSP",
+                        "DatePostInformation",
+                        "DateAddedColSP"
                     ]
                 }
             };
         }
     }
 });
-
 //
 // GET EVENTS
 //
