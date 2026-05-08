@@ -1,10 +1,10 @@
 // RangeBooker API
-const API_VERSION = "2026-05-07 BULLETIN BOARD LIVE";
 // File: src/functions/GetLocations.js
+// Version: 2026-05-07 BULLETIN BOARD FIXED
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-06 SETTINGS API ADDED";
+const API_VERSION = "2026-05-07 BULLETIN BOARD FIXED";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -238,6 +238,76 @@ app.http("GetLocations", {
 });
 
 //
+// GET BULLETIN BOARD POSTS
+//
+app.http("GetBulletinBoardPosts", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetBulletinBoardPosts called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const items = await getListItems(token, site.id, "BulletinBoardPostsSP");
+
+            const posts = items
+                .map(item => {
+                    const f = item.fields || {};
+
+                    return {
+                        id: item.id,
+                        title: f.PostTitleColSP || f.Title || "Untitled Post",
+                        information: f.PostInformationColSP || "",
+                        datePostInformation: f.DatePostInformation || "",
+                        dateAdded: f.DateAddedColSP || "",
+                        debugFields: f
+                    };
+                })
+                .sort((a, b) => {
+                    const dateA = new Date(a.dateAdded || a.datePostInformation || 0);
+                    const dateB = new Date(b.dateAdded || b.datePostInformation || 0);
+
+                    return dateB - dateA;
+                });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "Bulletin board posts loaded.",
+                    count: posts.length,
+                    posts
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message,
+                    message: "Failed to load bulletin board posts.",
+                    commonChecks: [
+                        "Make sure the SharePoint list is named BulletinBoardPostsSP exactly.",
+                        "Make sure the title column internal name is PostTitleColSP exactly.",
+                        "Make sure the story/body column internal name is PostInformationColSP exactly.",
+                        "Make sure DatePostInformation exists.",
+                        "Make sure DateAddedColSP exists.",
+                        "Make sure this Azure Function file deployed successfully."
+                    ]
+                }
+            };
+        }
+    }
+});
+
+//
 // GET EVENTS
 //
 app.http("GetEvents", {
@@ -267,7 +337,7 @@ app.http("GetEvents", {
                 const images = photos
                     .map(photo => {
                         const pf = photo.fields || {};
-                        return buildImageDataUrl(pf.Base64);
+                        return buildImageDataUrl(pf.Base64ColSP || pf.Base64 || "");
                     })
                     .filter(src => src);
 
