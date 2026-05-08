@@ -1,5 +1,5 @@
 // RangeBooker API
-// Version: 2026-05-06 SETTINGS API ADDED
+const API_VERSION = "2026-05-07 BULLETIN BOARD LIVE";
 // File: src/functions/GetLocations.js
 
 const { app } = require("@azure/functions");
