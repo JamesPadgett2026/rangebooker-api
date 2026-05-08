@@ -1058,10 +1058,11 @@ app.http("GetBulletinBoardPosts", {
 
                     return {
                         id: item.id,
-                        title: f.PostsTitleColSP || "",
+                        title: f.PostTitleColSP || "",
                         information: f.PostInformationColSP || "",
                         datePostInformation: f.DatePostInformation || "",
-                        dateAdded: f.DateAddedColSP || ""
+                        dateAdded: f.DateAddedColSP || "",
+                        category: f.CategoryColSP || ""
                     };
                 })
                 .sort((a, b) => {
