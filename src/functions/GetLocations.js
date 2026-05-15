@@ -253,9 +253,10 @@ app.http("GetLocations", {
 });
 
 //
+//
 // GET WEBSITE PHOTOS
 // Use this before login / before GetEvents.
-// Pulls splash image, bulletin board photos, and event photos into one endpoint.
+// Pulls photos from WebsitePhotoListSP, splash image, bulletin board photos, and event photos.
 //
 app.http("GetWebsitePhotos", {
     methods: ["GET"],
@@ -267,11 +268,18 @@ app.http("GetWebsitePhotos", {
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
 
+            let websitePhotoItems = [];
             let splashItems = [];
             let bulletinPosts = [];
             let bulletinPhotos = [];
             let eventItems = [];
             let eventPhotos = [];
+
+            try {
+                websitePhotoItems = await getListItems(token, site.id, "WebsitePhotoListSP");
+            } catch (err) {
+                context.warn("WebsitePhotoListSP load skipped: " + err.message);
+            }
 
             try {
                 splashItems = await getListItems(token, site.id, "SplashPagePassword");
@@ -305,8 +313,38 @@ app.http("GetWebsitePhotos", {
 
             const photos = [];
 
+            //
+            // WEBSITE PHOTOS LIST
+            //
+            websitePhotoItems.forEach(item => {
+                const f = item.fields || {};
+
+                const image = buildImageDataUrl(
+                    f.PhotoBase64ColSP || ""
+                );
+
+                if (image) {
+                    photos.push({
+                        id: `website-${item.id}`,
+                        source: "WebsitePhotoListSP",
+                        type: "website",
+                        title: f.PhotoNameColSP || f.Title || "",
+                        photoName: f.PhotoNameColSP || "",
+                        relatedId: item.id,
+                        notes: f.NotesColSP || "",
+                        date: f.DateTimeUpdated || "",
+                        image: image
+                    });
+                }
+            });
+
+            //
+            // SPLASH PHOTO
+            //
             const splashFields = splashItems[0]?.fields || {};
-            const splashImage = buildImageDataUrl(splashFields.Base64ColSP || "");
+            const splashImage = buildImageDataUrl(
+                splashFields.Base64ColSP || ""
+            );
 
             if (splashImage) {
                 photos.push({
@@ -314,14 +352,19 @@ app.http("GetWebsitePhotos", {
                     source: "SplashPagePassword",
                     type: "splash",
                     title: "Splash Image",
+                    photoName: "Splash Image",
                     relatedId: "",
                     image: splashImage
                 });
             }
 
+            //
+            // BULLETIN BOARD PHOTOS
+            //
             bulletinPhotos.forEach(photo => {
                 const pf = photo.fields || {};
                 const postId = Number(pf.BBPostIDLockInColSP || 0);
+
                 const matchingPost = bulletinPosts.find(post => {
                     const postFields = post.fields || {};
                     return Number(postFields.ID || post.id || 0) === postId;
@@ -340,6 +383,7 @@ app.http("GetWebsitePhotos", {
                             matchingPostFields.PostTitleColSP ||
                             matchingPostFields.Title ||
                             "Bulletin Board Photo",
+                        photoName: pf.PhotoTitleColSP || "",
                         relatedId: postId,
                         postTitle:
                             matchingPostFields.PostTitleColSP ||
@@ -355,16 +399,22 @@ app.http("GetWebsitePhotos", {
                 }
             });
 
+            //
+            // EVENT PHOTOS
+            //
             eventPhotos.forEach(photo => {
                 const pf = photo.fields || {};
                 const eventId = Number(pf.EventLockInIDColSP || 0);
+
                 const matchingEvent = eventItems.find(event => {
                     const eventFields = event.fields || {};
                     return Number(eventFields.ID || event.id || 0) === eventId;
                 });
 
                 const matchingEventFields = matchingEvent?.fields || {};
-                const image = buildImageDataUrl(pf.Base64ColSP || pf.Base64 || "");
+                const image = buildImageDataUrl(
+                    pf.Base64ColSP || pf.Base64 || ""
+                );
 
                 if (image) {
                     photos.push({
@@ -375,6 +425,10 @@ app.http("GetWebsitePhotos", {
                             matchingEventFields.EventNameColSP ||
                             matchingEventFields.Title ||
                             "Event Photo",
+                        photoName:
+                            matchingEventFields.EventNameColSP ||
+                            matchingEventFields.Title ||
+                            "",
                         relatedId: eventId,
                         eventDate:
                             matchingEventFields.EventDate ||
@@ -414,7 +468,6 @@ app.http("GetWebsitePhotos", {
         }
     }
 });
-
 //
 // GET BULLETIN BOARD POSTS WITH PHOTOS
 //
