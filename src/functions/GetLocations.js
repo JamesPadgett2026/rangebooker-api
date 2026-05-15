@@ -1,10 +1,10 @@
 // RangeBooker API
 // File: src/functions/GetLocations.js
-// Version: 2026-05-07 BULLETIN BOARD FIXED
+// Version: 2026-05-14 WEBSITE PHOTOS ADDED
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-07 BULLETIN BOARD FIXED";
+const API_VERSION = "2026-05-14 WEBSITE PHOTOS ADDED";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -108,7 +108,22 @@ function buildImageDataUrl(base64Value) {
         mimeType = "image/jpeg";
     }
 
+    if (cleanBase64.startsWith("R0lGOD")) {
+        mimeType = "image/gif";
+    }
+
+    if (cleanBase64.startsWith("UklGR")) {
+        mimeType = "image/webp";
+    }
+
     return `data:${mimeType};base64,${cleanBase64}`;
+}
+
+function getCleanBase64(base64Value) {
+    return String(base64Value || "")
+        .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
+        .replace(/^data:image;application\/octet-stream;base64,/, "")
+        .trim();
 }
 
 function formatEventDate(value) {
@@ -238,6 +253,169 @@ app.http("GetLocations", {
 });
 
 //
+// GET WEBSITE PHOTOS
+// Use this before login / before GetEvents.
+// Pulls splash image, bulletin board photos, and event photos into one endpoint.
+//
+app.http("GetWebsitePhotos", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetWebsitePhotos called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            let splashItems = [];
+            let bulletinPosts = [];
+            let bulletinPhotos = [];
+            let eventItems = [];
+            let eventPhotos = [];
+
+            try {
+                splashItems = await getListItems(token, site.id, "SplashPagePassword");
+            } catch (err) {
+                context.warn("SplashPagePassword photo load skipped: " + err.message);
+            }
+
+            try {
+                bulletinPosts = await getListItems(token, site.id, "BulletinBoardPostsSP");
+            } catch (err) {
+                context.warn("BulletinBoardPostsSP load skipped: " + err.message);
+            }
+
+            try {
+                bulletinPhotos = await getListItems(token, site.id, "BulletinBoardPhotos");
+            } catch (err) {
+                context.warn("BulletinBoardPhotos load skipped: " + err.message);
+            }
+
+            try {
+                eventItems = await getListItems(token, site.id, "EventListMaster");
+            } catch (err) {
+                context.warn("EventListMaster load skipped: " + err.message);
+            }
+
+            try {
+                eventPhotos = await getListItems(token, site.id, "EventPhotosBase64");
+            } catch (err) {
+                context.warn("EventPhotosBase64 load skipped: " + err.message);
+            }
+
+            const photos = [];
+
+            const splashFields = splashItems[0]?.fields || {};
+            const splashImage = buildImageDataUrl(splashFields.Base64ColSP || "");
+
+            if (splashImage) {
+                photos.push({
+                    id: "splash-main",
+                    source: "SplashPagePassword",
+                    type: "splash",
+                    title: "Splash Image",
+                    relatedId: "",
+                    image: splashImage
+                });
+            }
+
+            bulletinPhotos.forEach(photo => {
+                const pf = photo.fields || {};
+                const postId = Number(pf.BBPostIDLockInColSP || 0);
+                const matchingPost = bulletinPosts.find(post => {
+                    const postFields = post.fields || {};
+                    return Number(postFields.ID || post.id || 0) === postId;
+                });
+
+                const matchingPostFields = matchingPost?.fields || {};
+                const image = buildImageDataUrl(pf.Base64ColSP || "");
+
+                if (image) {
+                    photos.push({
+                        id: `bulletin-${photo.id}`,
+                        source: "BulletinBoardPhotos",
+                        type: "bulletin",
+                        title:
+                            pf.PhotoTitleColSP ||
+                            matchingPostFields.PostTitleColSP ||
+                            matchingPostFields.Title ||
+                            "Bulletin Board Photo",
+                        relatedId: postId,
+                        postTitle:
+                            matchingPostFields.PostTitleColSP ||
+                            matchingPostFields.Title ||
+                            "",
+                        category: matchingPostFields.CategoryColSP || "",
+                        date:
+                            matchingPostFields.DatePostInformation ||
+                            matchingPostFields.DateAddedColSP ||
+                            "",
+                        image: image
+                    });
+                }
+            });
+
+            eventPhotos.forEach(photo => {
+                const pf = photo.fields || {};
+                const eventId = Number(pf.EventLockInIDColSP || 0);
+                const matchingEvent = eventItems.find(event => {
+                    const eventFields = event.fields || {};
+                    return Number(eventFields.ID || event.id || 0) === eventId;
+                });
+
+                const matchingEventFields = matchingEvent?.fields || {};
+                const image = buildImageDataUrl(pf.Base64ColSP || pf.Base64 || "");
+
+                if (image) {
+                    photos.push({
+                        id: `event-${photo.id}`,
+                        source: "EventPhotosBase64",
+                        type: "event",
+                        title:
+                            matchingEventFields.EventNameColSP ||
+                            matchingEventFields.Title ||
+                            "Event Photo",
+                        relatedId: eventId,
+                        eventDate:
+                            matchingEventFields.EventDate ||
+                            matchingEventFields.WhenCreated ||
+                            "",
+                        eventDateText: formatEventDate(
+                            matchingEventFields.EventDate ||
+                            matchingEventFields.WhenCreated ||
+                            ""
+                        ),
+                        image: image
+                    });
+                }
+            });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    count: photos.length,
+                    photos: photos
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+//
 // GET BULLETIN BOARD POSTS WITH PHOTOS
 //
 app.http("GetBulletinBoardPosts", {
@@ -250,31 +428,17 @@ app.http("GetBulletinBoardPosts", {
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
 
-            // POSTS
-            const items = await getListItems(
-                token,
-                site.id,
-                "BulletinBoardPostsSP"
-            );
-
-            // PHOTOS
-            const photoItems = await getListItems(
-                token,
-                site.id,
-                "BulletinBoardPhotos"
-            );
+            const items = await getListItems(token, site.id, "BulletinBoardPostsSP");
+            const photoItems = await getListItems(token, site.id, "BulletinBoardPhotos");
 
             const posts = items
                 .map(item => {
                     const f = item.fields || {};
-
                     const postId = Number(f.ID || item.id);
 
-                    // FIND MATCHING PHOTOS
                     const matchingPhotos = photoItems
                         .filter(photo => {
                             const pf = photo.fields || {};
-
                             return Number(pf.BBPostIDLockInColSP || 0) === postId;
                         })
                         .map(photo => {
@@ -283,9 +447,7 @@ app.http("GetBulletinBoardPosts", {
                             return {
                                 id: photo.id,
                                 title: pf.PhotoTitleColSP || "",
-                                image: buildImageDataUrl(
-                                    pf.Base64ColSP || ""
-                                )
+                                image: buildImageDataUrl(pf.Base64ColSP || "")
                             };
                         })
                         .filter(photo => photo.image);
@@ -295,25 +457,15 @@ app.http("GetBulletinBoardPosts", {
                         title: f.PostTitleColSP || f.Title || "Untitled Post",
                         information: f.PostInformationColSP || "",
                         category: f.CategoryColSP || "",
-                        datePostInformation:
-                            f.DatePostInformation || "",
-                        dateAdded:
-                            f.DateAddedColSP || "",
-
-                        // NEW
+                        datePostInformation: f.DatePostInformation || "",
+                        dateAdded: f.DateAddedColSP || "",
                         photos: matchingPhotos
                     };
                 })
                 .sort((a, b) => {
-                    return new Date(
-                        b.datePostInformation ||
-                        b.dateAdded ||
-                        0
-                    ) -
-                    new Date(
-                        a.datePostInformation ||
-                        a.dateAdded ||
-                        0
+                    return (
+                        new Date(b.datePostInformation || b.dateAdded || 0) -
+                        new Date(a.datePostInformation || a.dateAdded || 0)
                     );
                 });
 
@@ -341,6 +493,7 @@ app.http("GetBulletinBoardPosts", {
         }
     }
 });
+
 //
 // GET EVENTS
 //
@@ -988,10 +1141,7 @@ app.http("GetSplashPagePassword", {
             const item = items[0];
             const f = item?.fields || {};
 
-            const base64Image = String(f.Base64ColSP || "")
-                .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "")
-                .replace(/^data:image;application\/octet-stream;base64,/, "")
-                .trim();
+            const base64Image = getCleanBase64(f.Base64ColSP || "");
 
             return {
                 status: 200,
@@ -999,7 +1149,8 @@ app.http("GetSplashPagePassword", {
                     success: true,
                     version: API_VERSION,
                     password: f.SplashPagePasswordColSP || "",
-                    imageBase64: base64Image
+                    imageBase64: base64Image,
+                    imageDataUrl: buildImageDataUrl(base64Image)
                 }
             };
 
