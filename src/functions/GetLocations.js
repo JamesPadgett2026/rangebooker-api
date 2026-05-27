@@ -1375,7 +1375,7 @@ app.http("GetYardSaleItems", {
                     const photos = photoRows
                         .filter(photo => {
                             const pf = photo.fields || {};
-                            return Number(pf.YardSaleItemLockInColSP || 0) === itemId;
+                            return Number(pf.YardSaleItemLockInIDColSP || 0) === itemId;
                         })
                         .map(photo => {
                             const pf = photo.fields || {};
