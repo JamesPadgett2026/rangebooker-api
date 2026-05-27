@@ -1345,3 +1345,81 @@ app.http("UpdateMySettings", {
         }
     }
 });
+//
+// GET YARD SALE ITEMS WITH PHOTOS
+//
+app.http("GetYardSaleItems", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetYardSaleItems called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const itemRows = await getListItems(token, site.id, "YardSaleItems");
+            const photoRows = await getListItems(token, site.id, "YardSaleItemsPhotos");
+
+            const items = itemRows.map(item => {
+                const f = item.fields || {};
+                const itemId = Number(f.ID || item.id || 0);
+
+                const photos = photoRows
+                    .filter(photo => {
+                        const pf = photo.fields || {};
+                        return Number(pf.YardSaleItemLockInIDColSP || 0) === itemId;
+                    })
+                    .map(photo => {
+                        const pf = photo.fields || {};
+
+                        return {
+                            id: photo.id,
+                            title: pf.Title || "",
+                            notes: pf.PhotoNotesColSP || "",
+                            image: buildImageDataUrl(
+                                pf.PhotoYardSaleBase64ColSP ||
+                                pf.Base64ColSP ||
+                                ""
+                            )
+                        };
+                    })
+                    .filter(photo => photo.image);
+
+                return {
+                    id: itemId,
+                    title: f.Title || "Untitled Item",
+                    itemName: f.ItemNameColSP || f.Title || "Untitled Item",
+                    description: f.DescriptionColSP || "",
+                    askingPrice: f.AskingPrice || f.AskingPriceColSP || "",
+                    status: f.StatusColSP || "",
+                    dateAdded: f.DateTimeAddedColSP || f.Created || "",
+                    photos: photos,
+                    imageDataUrl: photos.length > 0 ? photos[0].image : ""
+                };
+            });
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    count: items.length,
+                    items: items
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
