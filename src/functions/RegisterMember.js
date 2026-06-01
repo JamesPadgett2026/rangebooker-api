@@ -150,7 +150,6 @@ app.http("RegisterMember", {
                 Phone4ColSP: phoneParts.phone4 || "",
                 MemberType: 1,
                 Active: "Yes",
-                DateJoined: new Date().toISOString(),
                 Notes: notes || ""
             };
 
