@@ -27,25 +27,6 @@ async function getAccessToken() {
     return data.access_token;
 }
 
-async function getSite(token) {
-    const res = await fetch(
-        "https://graph.microsoft.com/v1.0/sites/tropicaltech.sharepoint.com:/sites/RangeBooker",
-        {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-        throw new Error("Site lookup failed: " + JSON.stringify(data));
-    }
-
-    return data;
-}
-
 async function readResponseBody(response) {
     const text = await response.text();
 
@@ -60,6 +41,75 @@ async function readResponseBody(response) {
             rawResponse: text
         };
     }
+}
+
+async function getSite(token) {
+    const response = await fetch(
+        "https://graph.microsoft.com/v1.0/sites/tropicaltech.sharepoint.com:/sites/RangeBooker",
+        {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    );
+
+    const data = await readResponseBody(response);
+
+    if (!response.ok) {
+        throw new Error("Site lookup failed: " + JSON.stringify(data));
+    }
+
+    return data;
+}
+
+async function getList(token, siteId) {
+    const response = await fetch(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    );
+
+    const data = await readResponseBody(response);
+
+    if (!response.ok) {
+        throw new Error("List lookup failed: " + JSON.stringify(data));
+    }
+
+    const lists = data.value || [];
+
+    const memberList = lists.find(list => {
+        const name = String(list.name || "").trim().toLowerCase();
+        const displayName = String(list.displayName || "").trim().toLowerCase();
+
+        return (
+            name === "memberlistsp" ||
+            displayName === "memberlistsp" ||
+            displayName === "member list sp" ||
+            displayName === "memberlist"
+        );
+    });
+
+    if (!memberList) {
+        throw new Error(
+            "Could not find MemberListSP. Available lists: " +
+            lists.map(list => `${list.displayName || list.name} (${list.id})`).join(", ")
+        );
+    }
+
+    return memberList;
+}
+
+function isDuplicateEmailError(data) {
+    const message = String(data?.error?.message || "").toLowerCase();
+
+    return (
+        message.includes("unique constraints") ||
+        message.includes("duplicate") ||
+        message.includes("already has the provided value")
+    );
 }
 
 app.http("RegisterMember", {
@@ -89,16 +139,20 @@ app.http("RegisterMember", {
 
             const token = await getAccessToken();
             const site = await getSite(token);
+            const memberList = await getList(token, site.id);
+
+            context.log("USING LIST:");
+            context.log(JSON.stringify(memberList, null, 2));
 
             const fields = {
                 Title: title
             };
 
-            context.log("TITLE ONLY FIELDS BEING SENT:");
+            context.log("FIELDS BEING SENT:");
             context.log(JSON.stringify(fields, null, 2));
 
-            const createRes = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items`,
+            const createResponse = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/${memberList.id}/items`,
                 {
                     method: "POST",
                     headers: {
@@ -111,17 +165,29 @@ app.http("RegisterMember", {
                 }
             );
 
-            const createData = await readResponseBody(createRes);
+            const createData = await readResponseBody(createResponse);
 
-            context.log("TITLE ONLY CREATE RESPONSE:");
+            context.log("CREATE RESPONSE:");
             context.log(JSON.stringify(createData, null, 2));
 
-            if (!createRes.ok) {
+            if (!createResponse.ok) {
+                if (isDuplicateEmailError(createData)) {
+                    return {
+                        status: 409,
+                        jsonBody: {
+                            success: false,
+                            error: "An account with this email already exists.",
+                            graphResponse: createData
+                        }
+                    };
+                }
+
                 return {
                     status: 500,
                     jsonBody: {
                         success: false,
-                        error: "Title-only member create failed.",
+                        error: "Member create failed.",
+                        listUsed: memberList,
                         sentFields: fields,
                         graphResponse: createData
                     }
@@ -133,7 +199,12 @@ app.http("RegisterMember", {
                 jsonBody: {
                     success: true,
                     message: "Title-only member created successfully.",
-                    id: createData.id
+                    id: createData.id,
+                    listUsed: {
+                        id: memberList.id,
+                        name: memberList.name,
+                        displayName: memberList.displayName
+                    }
                 }
             };
 
