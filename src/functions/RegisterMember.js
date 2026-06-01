@@ -7,7 +7,9 @@ async function getAccessToken() {
 
     const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
         body: new URLSearchParams({
             client_id: clientId,
             client_secret: clientSecret,
@@ -19,7 +21,7 @@ async function getAccessToken() {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(JSON.stringify(data));
+        throw new Error("Token failed: " + JSON.stringify(data));
     }
 
     return data.access_token;
@@ -29,31 +31,39 @@ async function getSite(token) {
     const res = await fetch(
         "https://graph.microsoft.com/v1.0/sites/tropicaltech.sharepoint.com:/sites/RangeBooker",
         {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
         }
     );
 
     const data = await res.json();
 
     if (!res.ok) {
-        throw new Error(`Site lookup failed: ${JSON.stringify(data)}`);
+        throw new Error("Site lookup failed: " + JSON.stringify(data));
     }
 
     return data;
 }
 
-function splitPhone(phone) {
-    const digits = String(phone || "").replace(/\D/g, "");
+async function readResponseBody(response) {
+    const text = await response.text();
 
-    return {
-        areaCode: digits.substring(0, 3) || "",
-        phone3: digits.substring(3, 6) || "",
-        phone4: digits.substring(6, 10) || ""
-    };
+    if (!text) {
+        return {};
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch {
+        return {
+            rawResponse: text
+        };
+    }
 }
 
-function isDuplicateEmailError(createData) {
-    const message = String(createData?.error?.message || "").toLowerCase();
+function isDuplicateEmailError(data) {
+    const message = String(data?.error?.message || "").toLowerCase();
 
     return (
         message.includes("unique constraints") ||
@@ -65,6 +75,7 @@ function isDuplicateEmailError(createData) {
 app.http("RegisterMember", {
     methods: ["GET", "POST"],
     authLevel: "anonymous",
+
     handler: async (request, context) => {
         try {
             if (request.method === "GET") {
@@ -82,9 +93,7 @@ app.http("RegisterMember", {
             const firstName = String(body.firstName || "").trim();
             const lastName = String(body.lastName || "").trim();
             const email = String(body.email || "").trim().toLowerCase();
-            const phone = String(body.phone || "").trim();
             const password = String(body.password || "");
-            const notes = String(body.notes || "").trim();
 
             if (!firstName || !lastName || !email || !password) {
                 return {
@@ -108,16 +117,21 @@ app.http("RegisterMember", {
                 }
             );
 
-            const duplicateData = await duplicateRes.json();
+            const duplicateData = await readResponseBody(duplicateRes);
 
             if (!duplicateRes.ok) {
-                throw new Error(`Duplicate check failed: ${JSON.stringify(duplicateData)}`);
+                throw new Error("Duplicate check failed: " + JSON.stringify(duplicateData));
             }
 
             const emailAlreadyExists = (duplicateData.value || []).some(item => {
-                const existingEmailColSP = String(item.fields?.EmailColSP || "").trim().toLowerCase();
-                const existingLoginEmail = String(item.fields?.loginemail || "").trim().toLowerCase();
-                const existingEmailLowercase = String(item.fields?.email || "").trim().toLowerCase();
+                const existingEmailColSP =
+                    String(item.fields?.EmailColSP || "").trim().toLowerCase();
+
+                const existingLoginEmail =
+                    String(item.fields?.loginemail || "").trim().toLowerCase();
+
+                const existingEmailLowercase =
+                    String(item.fields?.email || "").trim().toLowerCase();
 
                 return (
                     existingEmailColSP === email ||
@@ -136,22 +150,17 @@ app.http("RegisterMember", {
                 };
             }
 
-            const phoneParts = splitPhone(phone);
-
             const fields = {
                 Title: `${firstName} ${lastName}`,
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
                 EmailColSP: email,
                 loginemail: email,
-                PasswordColSP: password,
-                AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
-                Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
-                Phone4ColSP: phoneParts.phone4 || "",
-                MemberType: 1,
-                Active: "Yes",
-                Notes: notes || ""
+                PasswordColSP: password
             };
+
+            context.log("FIELDS BEING SENT:");
+            context.log(JSON.stringify(fields, null, 2));
 
             const createRes = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items`,
@@ -161,11 +170,16 @@ app.http("RegisterMember", {
                         Authorization: `Bearer ${token}`,
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ fields })
+                    body: JSON.stringify({
+                        fields
+                    })
                 }
             );
 
-            const createData = await createRes.json();
+            const createData = await readResponseBody(createRes);
+
+            context.log("RAW CREATE RESPONSE:");
+            context.log(JSON.stringify(createData, null, 2));
 
             if (!createRes.ok) {
                 if (isDuplicateEmailError(createData)) {
@@ -178,7 +192,15 @@ app.http("RegisterMember", {
                     };
                 }
 
-                throw new Error(`Create failed: ${JSON.stringify(createData)}`);
+                return {
+                    status: 500,
+                    jsonBody: {
+                        success: false,
+                        error: "Member create failed.",
+                        sentFields: fields,
+                        graphResponse: createData
+                    }
+                };
             }
 
             return {
@@ -191,6 +213,9 @@ app.http("RegisterMember", {
             };
 
         } catch (err) {
+            context.log("REGISTER MEMBER ERROR:");
+            context.log(err.message);
+
             return {
                 status: 500,
                 jsonBody: {
