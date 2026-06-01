@@ -664,7 +664,7 @@ app.http("RegisterMember", {
                 Title: `${firstName} ${lastName}`,
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
-                EmailColSP: email,
+                email: email,
                 loginemail: email,
                 PasswordColSP: password,
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
