@@ -253,10 +253,7 @@ app.http("GetLocations", {
 });
 
 //
-//
 // GET WEBSITE PHOTOS
-// Use this before login / before GetEvents.
-// Pulls photos from WebsitePhotoListSP, splash image, bulletin board photos, and event photos.
 //
 app.http("GetWebsitePhotos", {
     methods: ["GET"],
@@ -275,53 +272,18 @@ app.http("GetWebsitePhotos", {
             let eventItems = [];
             let eventPhotos = [];
 
-            try {
-                websitePhotoItems = await getListItems(token, site.id, "WebsitePhotoListSP");
-            } catch (err) {
-                context.warn("WebsitePhotoListSP load skipped: " + err.message);
-            }
-
-            try {
-                splashItems = await getListItems(token, site.id, "SplashPagePassword");
-            } catch (err) {
-                context.warn("SplashPagePassword photo load skipped: " + err.message);
-            }
-
-            try {
-                bulletinPosts = await getListItems(token, site.id, "BulletinBoardPostsSP");
-            } catch (err) {
-                context.warn("BulletinBoardPostsSP load skipped: " + err.message);
-            }
-
-            try {
-                bulletinPhotos = await getListItems(token, site.id, "BulletinBoardPhotos");
-            } catch (err) {
-                context.warn("BulletinBoardPhotos load skipped: " + err.message);
-            }
-
-            try {
-                eventItems = await getListItems(token, site.id, "EventListMaster");
-            } catch (err) {
-                context.warn("EventListMaster load skipped: " + err.message);
-            }
-
-            try {
-                eventPhotos = await getListItems(token, site.id, "EventPhotosBase64");
-            } catch (err) {
-                context.warn("EventPhotosBase64 load skipped: " + err.message);
-            }
+            try { websitePhotoItems = await getListItems(token, site.id, "WebsitePhotoListSP"); } catch (err) { context.warn("WebsitePhotoListSP load skipped: " + err.message); }
+            try { splashItems = await getListItems(token, site.id, "SplashPagePassword"); } catch (err) { context.warn("SplashPagePassword photo load skipped: " + err.message); }
+            try { bulletinPosts = await getListItems(token, site.id, "BulletinBoardPostsSP"); } catch (err) { context.warn("BulletinBoardPostsSP load skipped: " + err.message); }
+            try { bulletinPhotos = await getListItems(token, site.id, "BulletinBoardPhotos"); } catch (err) { context.warn("BulletinBoardPhotos load skipped: " + err.message); }
+            try { eventItems = await getListItems(token, site.id, "EventListMaster"); } catch (err) { context.warn("EventListMaster load skipped: " + err.message); }
+            try { eventPhotos = await getListItems(token, site.id, "EventPhotosBase64"); } catch (err) { context.warn("EventPhotosBase64 load skipped: " + err.message); }
 
             const photos = [];
 
-            //
-            // WEBSITE PHOTOS LIST
-            //
             websitePhotoItems.forEach(item => {
                 const f = item.fields || {};
-
-                const image = buildImageDataUrl(
-                    f.PhotoBase64ColSP || ""
-                );
+                const image = buildImageDataUrl(f.PhotoBase64ColSP || "");
 
                 if (image) {
                     photos.push({
@@ -333,18 +295,13 @@ app.http("GetWebsitePhotos", {
                         relatedId: item.id,
                         notes: f.NotesColSP || "",
                         date: f.DateTimeUpdated || "",
-                        image: image
+                        image
                     });
                 }
             });
 
-            //
-            // SPLASH PHOTO
-            //
             const splashFields = splashItems[0]?.fields || {};
-            const splashImage = buildImageDataUrl(
-                splashFields.Base64ColSP || ""
-            );
+            const splashImage = buildImageDataUrl(splashFields.Base64ColSP || "");
 
             if (splashImage) {
                 photos.push({
@@ -358,9 +315,6 @@ app.http("GetWebsitePhotos", {
                 });
             }
 
-            //
-            // BULLETIN BOARD PHOTOS
-            //
             bulletinPhotos.forEach(photo => {
                 const pf = photo.fields || {};
                 const postId = Number(pf.BBPostIDLockInColSP || 0);
@@ -394,14 +348,11 @@ app.http("GetWebsitePhotos", {
                             matchingPostFields.DatePostInformation ||
                             matchingPostFields.DateAddedColSP ||
                             "",
-                        image: image
+                        image
                     });
                 }
             });
 
-            //
-            // EVENT PHOTOS
-            //
             eventPhotos.forEach(photo => {
                 const pf = photo.fields || {};
                 const eventId = Number(pf.EventLockInIDColSP || 0);
@@ -412,9 +363,7 @@ app.http("GetWebsitePhotos", {
                 });
 
                 const matchingEventFields = matchingEvent?.fields || {};
-                const image = buildImageDataUrl(
-                    pf.Base64ColSP || pf.Base64 || ""
-                );
+                const image = buildImageDataUrl(pf.Base64ColSP || pf.Base64 || "");
 
                 if (image) {
                     photos.push({
@@ -439,7 +388,7 @@ app.http("GetWebsitePhotos", {
                             matchingEventFields.WhenCreated ||
                             ""
                         ),
-                        image: image
+                        image
                     });
                 }
             });
@@ -450,7 +399,7 @@ app.http("GetWebsitePhotos", {
                     success: true,
                     version: API_VERSION,
                     count: photos.length,
-                    photos: photos
+                    photos
                 }
             };
 
@@ -468,6 +417,7 @@ app.http("GetWebsitePhotos", {
         }
     }
 });
+
 //
 // GET BULLETIN BOARD POSTS WITH PHOTOS
 //
@@ -528,7 +478,7 @@ app.http("GetBulletinBoardPosts", {
                     success: true,
                     version: API_VERSION,
                     count: posts.length,
-                    posts: posts
+                    posts
                 }
             };
 
@@ -592,26 +542,19 @@ app.http("GetEvents", {
                         f.EventNameColSP ||
                         f.Title ||
                         "Untitled Event",
-                    description:
-                        f.Description ||
-                        "",
-                    eventDate: eventDate,
+                    description: f.Description || "",
+                    eventDate,
                     eventDateText: formatEventDate(eventDate),
-                    createdDate:
-                        f.WhenCreated ||
-                        "",
-                    createdDateText:
-                        formatEventDate(f.WhenCreated || ""),
-                    createdByName:
-                        f.CreatedName ||
-                        "",
-                    images: images,
+                    createdDate: f.WhenCreated || "",
+                    createdDateText: formatEventDate(f.WhenCreated || ""),
+                    createdByName: f.CreatedName || "",
+                    images,
                     imageDataUrl: images.length > 0 ? images[0] : "",
                     debugPhotoInfo: {
-                        eventId: eventId,
+                        eventId,
                         totalBase64Photos: base64Photos.length,
                         matchedPhotos: photos.length,
-                        firstPhotoFields: firstPhotoFields
+                        firstPhotoFields
                     }
                 };
             });
@@ -689,29 +632,54 @@ app.http("RegisterMember", {
                 };
             }
 
-            const nowIso = new Date().toISOString();
-            const phoneParts = splitPhone(phone);
             const token = await getAccessToken();
             const site = await getRangeBookerSite(token);
+            const members = await getMemberItems(token, site.id);
+
+            const emailAlreadyExists = members.some(item => {
+                const f = item.fields || {};
+
+                return (
+                    normalizeEmail(f.EmailColSP) === email ||
+                    normalizeEmail(f.loginemail) === email ||
+                    normalizeEmail(f.email) === email
+                );
+            });
+
+            if (emailAlreadyExists) {
+                return {
+                    status: 409,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "An account with this email already exists."
+                    }
+                };
+            }
+
+            const phoneParts = splitPhone(phone);
+            const nowIso = new Date().toISOString();
 
             const fields = {
                 Title: `${firstName} ${lastName}`,
                 FirstNameColSP: firstName,
                 LastNameColSP: lastName,
-                email: email,
+                EmailColSP: email,
                 loginemail: email,
                 PasswordColSP: password,
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
                 Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
-                Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : 0,
+                Phone4ColSP: phoneParts.phone4 || "",
                 MemberType: 1,
                 Active: "Yes",
                 MembershipRequestApproved: "No",
-                DateJoined: nowIso,
                 LastLogin: nowIso,
                 Notes: notes || "",
                 PreferredContactChoice: "None"
             };
+
+            context.log("RegisterMember fields:");
+            context.log(JSON.stringify(fields, null, 2));
 
             const res = await fetch(
                 `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items`,
@@ -728,6 +696,9 @@ app.http("RegisterMember", {
             const data = await res.json();
 
             if (!res.ok) {
+                context.error("RegisterMember SharePoint create failed:");
+                context.error(JSON.stringify(data, null, 2));
+
                 if (isDuplicateEmailError(data)) {
                     return {
                         status: 409,
@@ -886,12 +857,12 @@ app.http("LoginMember", {
                         id: member.id,
                         firstName: f.FirstNameColSP || "",
                         lastName: f.LastNameColSP || "",
-                        email: email,
+                        email,
                         title: f.Title || "",
                         memberType: f.MemberType || 1,
                         membershipRequestApproved: f.MembershipRequestApproved || "",
                         preferredContactChoice: f.PreferredContactChoice || "",
-                        dateJoined: f.DateJoined || "",
+                        dateJoined: f.DateJoined || f.Created || "",
                         lastLogin: lastLoginNow
                     }
                 }
@@ -1327,7 +1298,7 @@ app.http("UpdateMySettings", {
                     success: true,
                     version: API_VERSION,
                     message: "Settings updated successfully.",
-                    preferredContactChoice: preferredContactChoice
+                    preferredContactChoice
                 }
             };
 
@@ -1345,7 +1316,7 @@ app.http("UpdateMySettings", {
         }
     }
 });
-//
+
 //
 // GET YARD SALE ITEMS WITH PHOTOS - JSON API
 //
@@ -1403,7 +1374,7 @@ app.http("GetYardSaleItems", {
                         askingPrice: f.AskingPrice || "",
                         saleOpenClosed: f.SaleOpenClosed || "",
                         dateAdded: f.DateTimeAdded || f.Created || "",
-                        photos: photos,
+                        photos,
                         imageDataUrl: photos.length > 0 ? photos[0].image : ""
                     };
                 });
@@ -1414,7 +1385,7 @@ app.http("GetYardSaleItems", {
                     success: true,
                     version: API_VERSION,
                     count: items.length,
-                    items: items
+                    items
                 }
             };
 
