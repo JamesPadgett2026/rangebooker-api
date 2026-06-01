@@ -62,16 +62,6 @@ async function readResponseBody(response) {
     }
 }
 
-function isDuplicateEmailError(data) {
-    const message = String(data?.error?.message || "").toLowerCase();
-
-    return (
-        message.includes("unique constraints") ||
-        message.includes("duplicate") ||
-        message.includes("already has the provided value")
-    );
-}
-
 app.http("RegisterMember", {
     methods: ["GET", "POST"],
     authLevel: "anonymous",
@@ -92,74 +82,19 @@ app.http("RegisterMember", {
 
             const firstName = String(body.firstName || "").trim();
             const lastName = String(body.lastName || "").trim();
-            const email = String(body.email || "").trim().toLowerCase();
-            const password = String(body.password || "");
 
-            if (!firstName || !lastName || !email || !password) {
-                return {
-                    status: 400,
-                    jsonBody: {
-                        success: false,
-                        error: "First name, last name, email, and password are required."
-                    }
-                };
-            }
+            const title =
+                `${firstName} ${lastName}`.trim() ||
+                "Test Member";
 
             const token = await getAccessToken();
             const site = await getSite(token);
 
-            const duplicateRes = await fetch(
-                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items?expand=fields&$top=5000`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                }
-            );
-
-            const duplicateData = await readResponseBody(duplicateRes);
-
-            if (!duplicateRes.ok) {
-                throw new Error("Duplicate check failed: " + JSON.stringify(duplicateData));
-            }
-
-            const emailAlreadyExists = (duplicateData.value || []).some(item => {
-                const existingEmailColSP =
-                    String(item.fields?.EmailColSP || "").trim().toLowerCase();
-
-                const existingLoginEmail =
-                    String(item.fields?.loginemail || "").trim().toLowerCase();
-
-                const existingEmailLowercase =
-                    String(item.fields?.email || "").trim().toLowerCase();
-
-                return (
-                    existingEmailColSP === email ||
-                    existingLoginEmail === email ||
-                    existingEmailLowercase === email
-                );
-            });
-
-            if (emailAlreadyExists) {
-                return {
-                    status: 409,
-                    jsonBody: {
-                        success: false,
-                        error: "An account with this email already exists."
-                    }
-                };
-            }
-
             const fields = {
-                Title: `${firstName} ${lastName}`,
-                FirstNameColSP: firstName,
-                LastNameColSP: lastName,
-                EmailColSP: email,
-                loginemail: email,
-                PasswordColSP: password
+                Title: title
             };
 
-            context.log("FIELDS BEING SENT:");
+            context.log("TITLE ONLY FIELDS BEING SENT:");
             context.log(JSON.stringify(fields, null, 2));
 
             const createRes = await fetch(
@@ -178,25 +113,15 @@ app.http("RegisterMember", {
 
             const createData = await readResponseBody(createRes);
 
-            context.log("RAW CREATE RESPONSE:");
+            context.log("TITLE ONLY CREATE RESPONSE:");
             context.log(JSON.stringify(createData, null, 2));
 
             if (!createRes.ok) {
-                if (isDuplicateEmailError(createData)) {
-                    return {
-                        status: 409,
-                        jsonBody: {
-                            success: false,
-                            error: "An account with this email already exists."
-                        }
-                    };
-                }
-
                 return {
                     status: 500,
                     jsonBody: {
                         success: false,
-                        error: "Member create failed.",
+                        error: "Title-only member create failed.",
                         sentFields: fields,
                         graphResponse: createData
                     }
@@ -207,7 +132,7 @@ app.http("RegisterMember", {
                 status: 200,
                 jsonBody: {
                     success: true,
-                    message: "Member created successfully",
+                    message: "Title-only member created successfully.",
                     id: createData.id
                 }
             };
