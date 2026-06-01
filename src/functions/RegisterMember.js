@@ -147,7 +147,7 @@ app.http("RegisterMember", {
                 PasswordColSP: password,
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
                 Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
-                Phone4ColSP: phoneParts.phone4 ? Number(phoneParts.phone4) : 0,
+                Phone4ColSP: phoneParts.phone4 || "",
                 MemberType: 1,
                 Active: "Yes",
                 DateJoined: new Date().toISOString(),
