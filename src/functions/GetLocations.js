@@ -1,10 +1,10 @@
 // RangeBooker API
 // File: src/functions/GetLocations.js
-// Version: 2026-05-14 WEBSITE PHOTOS ADDED
+// Version: 2026-06-07 RULES AND REGULATIONS FINAL
 
 const { app } = require("@azure/functions");
 
-const API_VERSION = "2026-05-14 WEBSITE PHOTOS ADDED";
+const API_VERSION = "2026-06-07 RULES AND REGULATIONS FINAL";
 
 async function getAccessToken() {
     const tenantId = process.env.TENANT_ID;
@@ -675,7 +675,8 @@ app.http("RegisterMember", {
                 MembershipRequestApproved: "No",
                 LastLogin: nowIso,
                 Notes: notes || "",
-                PreferredContactChoice: "None"
+                PreferredContactChoice: "None",
+                HasReadAndAccRulesAndReg: "No"
             };
 
             context.log("RegisterMember fields:");
@@ -863,7 +864,9 @@ app.http("LoginMember", {
                         membershipRequestApproved: f.MembershipRequestApproved || "",
                         preferredContactChoice: f.PreferredContactChoice || "",
                         dateJoined: f.DateJoined || f.Created || "",
-                        lastLogin: lastLoginNow
+                        lastLogin: lastLoginNow,
+                        rulesAcknowledged: f.HasReadAndAccRulesAndReg || "",
+                        rulesAcceptedDate: f.DateTimeAccepted || ""
                     }
                 }
             };
@@ -1392,6 +1395,128 @@ app.http("GetYardSaleItems", {
         } catch (err) {
             context.error(err);
 
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+//
+// GET RULES AND REGULATIONS
+//
+app.http("GetRulesAndRegulations", {
+    methods: ["GET"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`GetRulesAndRegulations called. Version: ${API_VERSION}`);
+
+        try {
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const items = await getListItems(token, site.id, "RulesAndRegRangeSite");
+
+            const rules = items
+                .map(item => {
+                    const f = item.fields || {};
+                    return {
+                        id: item.id,
+                        title: f.Title || "Rules and Regulations",
+                        rulesText: f.RulesAndRegColSP || "",
+                        version: f.VersionColSP2026 || f.Title || "",
+                        active: "Yes"
+                    };
+                })
+                .filter(r => r.active.toLowerCase() === "yes")
+                .sort((a, b) => Number(b.version || 0) - Number(a.version || 0))[0];
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    rules: rules || null
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
+            return {
+                status: 500,
+                jsonBody: {
+                    success: false,
+                    version: API_VERSION,
+                    error: err.message
+                }
+            };
+        }
+    }
+});
+
+//
+// ACKNOWLEDGE RULES
+//
+app.http("AcknowledgeRules", {
+    methods: ["POST"],
+    authLevel: "anonymous",
+    handler: async (request, context) => {
+        context.log(`AcknowledgeRules called. Version: ${API_VERSION}`);
+
+        try {
+            const body = await request.json();
+
+            const memberId = String(body.memberId || "").trim();
+
+            if (!memberId) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        success: false,
+                        version: API_VERSION,
+                        error: "Missing memberId."
+                    }
+                };
+            }
+
+            const token = await getAccessToken();
+            const site = await getRangeBookerSite(token);
+
+            const res = await fetch(
+                `https://graph.microsoft.com/v1.0/sites/${site.id}/lists/MemberListSP/items/${memberId}/fields`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        HasReadAndAccRulesAndReg: "Yes",
+                        DateTimeAccepted: new Date().toISOString()
+                    })
+                }
+            );
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error("Rules acknowledgement update failed: " + text);
+            }
+
+            return {
+                status: 200,
+                jsonBody: {
+                    success: true,
+                    version: API_VERSION,
+                    message: "Rules acknowledged."
+                }
+            };
+
+        } catch (err) {
+            context.error(err);
             return {
                 status: 500,
                 jsonBody: {
