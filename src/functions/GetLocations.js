@@ -670,7 +670,7 @@ app.http("RegisterMember", {
                 AreaCodeColSP: phoneParts.areaCode ? Number(phoneParts.areaCode) : 0,
                 Phone3ColSP: phoneParts.phone3 ? Number(phoneParts.phone3) : 0,
                 Phone4ColSP: phoneParts.phone4 || "",
-                MemberType: 1,
+                MemberType: 6,
                 Active: "Yes",
                 MembershipRequestApproved: "No",
                 LastLogin: nowIso,
